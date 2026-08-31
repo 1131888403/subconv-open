@@ -1,0 +1,6 @@
+#!/bin/bash
+# SubConv Web UI 启动脚本
+cd /var/minis/workspace/subconv
+echo "Starting SubConv Web UI..."
+echo "Open http://127.0.0.1:5000 in your browser"
+python3 webui.py

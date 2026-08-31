@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+"""
+SubConv - 订阅转换工具命令行入口
+用法:
+  python3 subconv -i <输入> -o <输出> -t <目标格式>
+  python3 subconv -i <输入> -l  # 仅列出节点
+"""
+
+import sys
+import os
+
+# 添加当前目录到路径
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from converter import main
+
+if __name__ == '__main__':
+    raise SystemExit(main() or 0)

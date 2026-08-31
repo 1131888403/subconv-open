@@ -1,0 +1,90 @@
+# 测试订阅 - Clash 格式
+proxies:
+  - name: "🇭🇰 香港 VMess"
+    type: vmess
+    server: hk1.example.com
+    port: 443
+    uuid: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+    alterId: 0
+    cipher: auto
+    tls: true
+    network: ws
+    ws-opts:
+      path: /vmess
+      headers:
+        Host: hk1.example.com
+    servername: hk1.example.com
+    skip-cert-verify: false
+
+  - name: "🇺🇸 美国 VLESS Reality"
+    type: vless
+    server: us1.example.com
+    port: 443
+    uuid: b2c3d4e5-f6a7-8901-bcde-f12345678901
+    network: tcp
+    tls: true
+    reality-opts:
+      public-key: abcdef1234567890
+      short-id: 12345678
+    servername: us1.example.com
+    skip-cert-verify: false
+
+  - name: "🇯🇵 日本 Trojan"
+    type: trojan
+    server: jp1.example.com
+    port: 443
+    password: trojan_password_123
+    network: ws
+    ws-opts:
+      path: /trojan
+      headers:
+        Host: jp1.example.com
+    sni: jp1.example.com
+    skip-cert-verify: false
+
+  - name: "🇸🇬 新加坡 Shadowsocks"
+    type: ss
+    server: sg1.example.com
+    port: 8388
+    cipher: chacha20-ietf-poly1305
+    password: ss_password_123
+
+  - name: "🇰🇷 韩国 Hysteria2"
+    type: hysteria2
+    server: kr1.example.com
+    port: 443
+    password: hy2_password_123
+    sni: kr1.example.com
+    skip-cert-verify: false
+    alpn:
+      - h3
+    obfs: salamander
+    obfs-password: obfs_pass_123
+
+  - name: "🇩🇪 德国 Tuic"
+    type: tuic
+    server: de1.example.com
+    port: 443
+    uuid: c3d4e5f6-a7b8-9012-cdef-123456789012
+    password: tuic_password_123
+    congestion-controller: bbr
+    udp-relay-mode: native
+    alpn:
+      - h3
+    skip-cert-verify: false
+
+proxy-groups:
+  - name: 🚀 节点选择
+    type: select
+    proxies:
+      - 🇭🇰 香港 VMess
+      - 🇺🇸 美国 VLESS Reality
+      - 🇯🇵 日本 Trojan
+      - 🇸🇬 新加坡 Shadowsocks
+      - 🇰🇷 韩国 Hysteria2
+      - 🇩🇪 德国 Tuic
+
+rules:
+  - GEOIP,LAN,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,🚀 节点选择

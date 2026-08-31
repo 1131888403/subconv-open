@@ -1,0 +1,20 @@
+# Local subscription data and generated conversion outputs
+rin-*
+w-*
+# Python and editor artifacts
+__pycache__/
+*.pyc
+.DS_Store
+
+# Generated conversion outputs (rebuild with node build.js / ./subconv)
+output-*
+# Backup copies of nginx conf
+*.bak
+*.bak-*
+
+# Secrets and local deployment state
+.env
+*.env
+relays.json
+*.pem
+*.key
