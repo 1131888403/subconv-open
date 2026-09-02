@@ -4065,18 +4065,17 @@ function groupNodes(nodes,opts){
     const fbAll   ={name:'🎯 故障转移', type:'fallback', members:names.slice()};
     const manual  ={name:'🔰 手动选择', type:'select',   members:names.slice()};
     groups=[{name:'🚀 节点选择', type:'select',
-             members:[autoAll.name, fbAll.name].concat(regions).concat(regions.length?[manual.name]:[])},
+             // Keep nodes directly in the main selector for clients that do not expand nested groups.
+             members:[autoAll.name, fbAll.name].concat(regions).concat(regions.length?[manual.name]:[]).concat(names)},
             autoAll, fbAll].concat(regions.map(mk)).concat(regions.length?[manual]:[]);
-  } else if(MODE==='region'){
-    groups=[{name:'🚀 节点选择', type:'select', members:regions.slice()}].concat(regions.map(mk));
   } else {
-    if(regions.length>1){
-      groups=[{name:'🚀 节点选择', type:'select', members:regions.slice()}].concat(regions.map(mk));
-    } else {
-      groups=[{name:'🚀 节点选择', type:names.length>=2?'url-test':'select', members:names.slice()}];
-    }
-    // 开启测速且尚无自动测速组时，补一个全节点 url-test
-    if(opts.test&&!groups.some(g=>g.type==='url-test')){
+    // Keep one flat main selector. Some Android clients turn nested region
+    // groups into separate tabs and then fail to expose their node members.
+    // The main group must stay manually selectable. Automatic testing is
+    // exposed as a separate group, rather than replacing node selection.
+    groups=[{name:'🚀 节点选择', type:'select', members:names.slice()}];
+    // 开启测速时补一个全节点 url-test，但不改变主组类型
+    if(opts.test){
       groups=[{name:'🚀 节点选择', type:'select', members:['♻️ 自动选择'].concat(names.slice())},
               {name:'♻️ 自动选择', type:'url-test', members:names.slice()}];
     }
@@ -4103,7 +4102,7 @@ function buildClash(list,opt){
   const pg=[];
   expandGroups(list,g).forEach(gr=>{
     const members=gr.members.slice();
-    const o={name:gr.name,type:gr.type,proxies:uniq(members.concat(['DIRECT']))};
+    const o={name:gr.name,type:gr.type,proxies:uniq(members.concat(/^(select|fallback)$/.test(gr.type)?['DIRECT']:[]))};
     if(/url-test|fallback|load-balance/.test(gr.type)) Object.assign(o,AUTO_GROUP);
     pg.push(o);
   });
