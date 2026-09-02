@@ -19,6 +19,7 @@ const sandbox={
   window:{isSecureContext:false, addEventListener(){}, location:{search:''}},
   navigator:{clipboard:null},
   Blob:class{constructor(a){this.parts=a}}, URL:{createObjectURL:()=>'blob:x', revokeObjectURL(){}},
+  localStorage:{_d:{},getItem(k){return Object.prototype.hasOwnProperty.call(this._d,k)?this._d[k]:null;},setItem(k,v){this._d[k]=String(v);},removeItem(k){delete this._d[k];},clear(){this._d={};}},
   AbortController:class{constructor(){this.signal={}} abort(){}},
   fetch:()=>Promise.reject(new Error('no network in test')),
   setTimeout, clearTimeout, atob:s=>Buffer.from(s,'base64').toString('binary'),
@@ -240,7 +241,7 @@ try{
   chk('makeQRCanvas 空文本返回 null', run('makeQRCanvas("")')===null);
 }catch(e){ chk('makeQRCanvas 空文本返回 null', false, e.message); }
 try{
-  chk('downQRBlob 返回 data URI', typeof run('downQRBlob("https://relay.example.com/sub/test")')==='string');
+  chk('downQRBlob 返回 data URI', typeof run('downQRBlob("https://subconv.example.com/sub/test")')==='string');
 }catch(e){ chk('downQRBlob 返回 data URI', false, e.message); }
 try{
   chk('qrTypeNumber 短链接', run('qrTypeNumber("https://example.com/sub/ab")')>=1 && run('qrTypeNumber("https://example.com/sub/ab")')<=40);
@@ -249,9 +250,144 @@ try{
   chk('showRelayQR 无链接不崩溃', true); run('document.getElementById("relay-url").value=""; showRelayQR()');
 }catch(e){ chk('showRelayQR 无链接不崩溃', false, e.message); }
 try{
-  run('document.getElementById("relay-url").value="https://relay.example.com/sub/abc"; showRelayQR()');
+  run('document.getElementById("relay-url").value="https://subconv.example.com/sub/abc"; showRelayQR()');
   chk('showRelayQR 生成后展示区可见', true);
 }catch(e){ chk('showRelayQR 生成后展示区可见', false, e.message); }
+
+/* ============ 11. 节点删减：手动 / 关键词 / 复用去重 ============ */
+console.log('\n## 11. 节点删减');
+/* 构造：trojan 同端点 3 节点（复用3）+ ss 同端点(443) 2 节点 —— 与 trojan 跨协议，
+   若代码错用 n.type（undefined）会被误合并成「复用5」 */
+const dupYaml = [
+  'proxies:',
+  '  - {name: "A1", type: trojan, server: t.example.com, port: 443, password: p1}',
+  '  - {name: "A2", type: trojan, server: t.example.com, port: 443, password: p2}',
+  '  - {name: "A3", type: trojan, server: t.example.com, port: 443, password: p3}',
+  '  - {name: "B1", type: ss, server: s.example.com, port: 443, password: p4, cipher: aes-256-gcm}',
+  '  - {name: "B2", type: ss, server: s.example.com, port: 443, password: p5, cipher: aes-256-gcm}',
+  '  - {name: "🇺🇸 C9", type: vless, server: u.example.com, port: 34567, uuid: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"}',
+].join('\n');
+
+run(`document.getElementById('i-url').value='https://feed.example.test/sub?token=ABC'`);
+let rd = run(`loadContent(${JSON.stringify(dupYaml)})`);
+const masterOf = () => run('MASTER.map(n=>n._orig||n.name)');
+chk('母本 6 个节点', rd.master === 6, 'got ' + rd.master);
+chk('未删减时生效 6 个', rd.n === 6, 'got ' + rd.n);
+chk('母本名字保持原样', masterOf().join(',') === 'A1,A2,A3,B1,B2,🇺🇸 C9', masterOf().join(','));
+
+/* —— 跨协议不算复用（n.type bug 的回归防护） —— */
+run('NAMETAG.mode="port";NAMETAG.markDup=true;runFilter()');
+const taggedNames = () => run('NODES.map(n=>n.name)');
+let tn = taggedNames();
+chk('trojan 组标为 复用3', tn[0] === 'A1【443 复用3】', tn[0]);
+chk('ss 组标为 复用2（未被并入 trojan）', tn[3] === 'B1【443 复用2】', tn[3]);
+chk('独占节点标 独占', tn[5] === '🇺🇸 C9【34567 独占】', tn[5]);
+
+/* —— 手动隐藏：计数不得随删减漂移 —— */
+run('FILTER.hidden[nodeKey(MASTER[0])]=1;runFilter()');
+chk('隐藏 1 个后生效 5 个', run('NODES.length') === 5, 'got ' + run('NODES.length'));
+chk('母本仍是 6 个（不可逆丢失）', run('MASTER.length') === 6, 'got ' + run('MASTER.length'));
+tn = taggedNames();
+chk('剩余 trojan 仍显示 复用3（基于母本计数）', tn[0] === 'A2【443 复用3】', tn[0]);
+chk('被删项记录原因=手动', run('FILTER_APPLIED.removed[0].why') === '手动', run('FILTER_APPLIED.removed[0].why'));
+
+/* —— 复用去重：每组只留第一个 —— */
+run('FILTER.hidden=Object.create(null);FILTER.dropDup=true;runFilter()');
+chk('去重后剩 3 组各 1 个', run('NODES.length') === 3, 'got ' + run('NODES.length'));
+chk('去重保留 A1', masterOf().length && run('NODES.map(n=>n._orig).join(",")') === 'A1,B1,🇺🇸 C9', run('NODES.map(n=>n._orig).join(",")'));
+chk('去重删 3 个且原因=复用去重', run('FILTER_APPLIED.removed.length') === 3 && run('FILTER_APPLIED.removed[0].why') === '复用去重');
+chk('复用组面板列出 2 个组', run('FILTER_APPLIED.groups.length') === 2, 'got ' + run('FILTER_APPLIED.groups.length'));
+/* 关键不变式：去重后名字里的复用计数仍为全量值 */
+chk('去重后 A1 仍标 复用3', run('NODES[0].name') === 'A1【443 复用3】', run('NODES[0].name'));
+
+/* —— 关键词规则引擎（不依赖改名，直接测 ruleHits） —— */
+run('FILTER.hidden=Object.create(null);FILTER.dropDup=false;NAMETAG.mode="off";NAMETAG.markDup=false;runFilter()');
+const hitOf = (kw) => run(`(function(){const r=parseKwRules(${JSON.stringify(kw)});return MASTER.filter(n=>r.active&&ruleHits(n,r)).map(n=>n._orig||n.name).join(",")})()`);
+chk('关键词按名字（大小写不敏感）', hitOf('c9') === '🇺🇸 C9', hitOf('c9'));
+chk('type: 按协议', hitOf('type:ss') === 'B1,B2', hitOf('type:ss'));
+chk('type:hy2 别名归一化命中 hysteria2', hitOf('type:hy2') === '', hitOf('type:hy2'));
+chk('port: 按端口', hitOf('port:34567') === '🇺🇸 C9', hitOf('port:34567'));
+chk('多词为「或」', hitOf('a1 b1') === 'A1,B1', hitOf('a1 b1'));
+chk('re/ 正则', hitOf('re/^🇺🇸/') === '🇺🇸 C9', hitOf('re/^🇺🇸/'));
+chk('re/i 标志位', hitOf('re/^[a]/i') === 'A1,A2,A3', hitOf('re/^[a]/i'));
+chk('纯 ! 前缀不触发删除', hitOf('!a1') === '', hitOf('!a1'));
+chk('命中后 ! 豁免', hitOf('type:trojan !a2') === 'A1,A3', hitOf('type:trojan !a2'));
+chk('协议豁免', hitOf('443 !type:ss') === 'A1,A2,A3', hitOf('443 !type:ss'));
+chk('全角！同样作豁免', hitOf('type:trojan ！a2') === 'A1,A3', hitOf('type:trojan ！a2'));
+chk('裸数字命中端口', hitOf('34567') === '\u{1F1FA}\u{1F1F8} C9', hitOf('34567'));
+chk('裸数字 443 命中全部 443 端口', hitOf('443') === 'A1,A2,A3,B1,B2', hitOf('443'));
+chk('非法正则被忽略且不抛', hitOf('re/([/ port:443') === 'A1,A2,A3,B1,B2', hitOf('re/([/ port:443'));
+
+/* —— 规则真正落到结果上 —— */
+run('FILTER.kw="type:trojan";runFilter()');
+chk('规则删除生效', run('NODES.length') === 3, 'got ' + run('NODES.length'));
+const whyOf = (kw, idx) => run(`(function(){const r=parseKwRules(${JSON.stringify(kw)});const h=ruleHits(MASTER[${idx}],r);return h?h.join('+'):'-'})()`);
+chk('原因: type: 标「协议」', whyOf('type:trojan', 0) === '协议', whyOf('type:trojan', 0));
+chk('原因: 裸数字标「端口」', whyOf('443', 0) === '端口', whyOf('443', 0));
+chk('原因: 多类并列', whyOf('type:ss 443', 3) === '协议+端口', whyOf('type:ss 443', 3));
+chk('原因: 正则标「正则」', whyOf('re/^A/', 0) === '正则', whyOf('re/^A/', 0));
+chk('原因: 豁免时不算命中', whyOf('443 !a1', 0) === '-', whyOf('443 !a1', 0));
+chk('生成配置只含 3 节点', /A1|A2|A3/.test(run('buildClash(NODES,{})')) === false);
+chk('buildV2Ray 只含存活节点', run('buildV2Ray(NODES,{}).trim().split(String.fromCharCode(10)).length') === 3, 'got ' + run('buildV2Ray(NODES,{}).trim().split(String.fromCharCode(10)).length'));
+
+/* —— 持久化：按订阅 URL 存，重新解析自动恢复 —— */
+run(`document.getElementById('i-url').value='https://feed.example.test/sub?token=ABC'`);
+run('filterSave()');
+const storeKey = run('filterStoreKey()');
+chk('已写入 localStorage', run(`localStorage.getItem(${JSON.stringify(storeKey)})`) !== null);
+let rr = run(`loadContent(${JSON.stringify(dupYaml)})`);
+chk('重新解析自动恢复删减', rr.restored === true && rr.removed === 3, JSON.stringify(rr));
+chk('恢复后生效 3 个', rr.n === 3, 'got ' + rr.n);
+chk('恢复的关键词规则', run('FILTER.kw') === 'type:trojan', run('FILTER.kw'));
+
+/* —— 换订阅不得继承上一份的删减 —— */
+run(`document.getElementById('i-url').value='https://other.example.test/sub?token=ZZZ'`);
+let r2 = run('loadContent(' + JSON.stringify(dupYaml) + ')');
+chk('换 URL 后删减归零', r2.removed === 0 && r2.restored === false && r2.n === 6, JSON.stringify(r2));
+run(`document.getElementById('i-url').value='https://feed.example.test/sub?token=ZZZ'`);
+chk('切到未见过的 URL 也是空删减', run('loadContent(MASTER.length?"proxies:\\n  - {name: Z, type: ss, server: 1.2.3.4, port: 1, password: x, cipher: aes-256-gcm}\\n":"" ).removed') === 0);
+
+/* —— 清空 —— */
+run(`document.getElementById('i-url').value='https://feed.example.test/sub?token=ABC'`);
+run('loadContent(' + JSON.stringify(dupYaml) + ');FILTER.kw="type:trojan";runFilter()');
+chk('清空前剩 3', run('NODES.length') === 3, 'got ' + run('NODES.length'));
+run('clearAllHidden()');
+chk('清空后回到 6', run('NODES.length') === 6, 'got ' + run('NODES.length'));
+
+
+chk('清空后关键词也归零', run('FILTER.kw') === '' && run('FILTER.dropDup') === false);
+
+/* —— 导出删减后的订阅 —— */
+run('FILTER.hidden[nodeKey(NODES[0])]=1;runFilter()');
+chk('导出 Base64 URI 少一个节点', (() => {
+  const b64 = run('b64e(FILTER_APPLIED.kept.map(n=>node2uri(n)).filter(Boolean).join("\\n"))');
+  const txt = Buffer.from(String(b64).replace(/^data:[^;]*;base64,/, ''), 'base64').toString('utf8');
+  return txt.split('\n').filter(Boolean).length === 5;
+})());
+
+
+/* —— 边界：代表节点被手动删除后，“留1删N”不得把整组删光 —— */
+run('FILTER.kw="";FILTER.hidden=Object.create(null);FILTER.dropDup=false;NAMETAG.mode="off";NAMETAG.markDup=false;runFilter()');
+run('toggleNodeHidden(0)');                       /* 隐藏母本第一个 trojan A1 */
+const g0 = JSON.parse(run('JSON.stringify(FILTER_APPLIED.groups[0])'));
+chk('groups 仍报母本全量 3 个', g0.names.length === 3, JSON.stringify(g0.names));
+run('hideGroupExtra(0)');
+const leftTrojan = JSON.parse(run('JSON.stringify(NODES.map(n=>n._orig))')).filter(x=>/^A/.test(x));
+chk('留1删N 至少保留一个存活节点', leftTrojan.length === 1, JSON.stringify(leftTrojan));
+
+/* —— 回归：fake-ip-filter 通配写法必须被 mihomo 接受 —— */
+/* 历史 bug：'+*.playstation.net' 会让 v1.19.30 整个配置加载失败 "invalid domain"，
+   不是功能降级而是代理完全起不来。mihomo 中匹配任意层级的合法前缀是 '+'（非 '+*'）。 */
+const cfgAll=run('buildClash(NODES,{groups:"all",test:true,rule:true})');
+const fif=(cfgAll.match(/fake-ip-filter:\n((?:[ \t]+- .*\n?)+)/)||[,''])[1];
+chk('生成的 Clash 配置含 fake-ip-filter 段', fif.trim().length>0, fif.slice(0,60));
+const fifItems=fif.split('\n').map(s=>s.trim().replace(/^-\s*/,'').replace(/^"|"$/g,'')).filter(Boolean);
+chk('fake-ip-filter 不含非法的 +*. 前缀', !fifItems.some(x=>x.startsWith('+*.')), fifItems.filter(x=>x.startsWith('+*.')).join(','));
+chk('playstation/cybergame 用合法 +. 写法', fifItems.includes('+.playstation.net')&&fifItems.includes('+.cybergame.net'), fifItems.join(' '));
+/* mihomo 合法前缀仅两种：'+.' 与 '*.'，或纯字面域名。'+*.' 会被判 invalid domain。
+   已用 11 项样本（9 合法 / 2 非法）验证本判定。 */
+const fifOk=x=>/^(?:\+\.|\*\.)?[\w][\w.*-]*$/.test(x);
+chk('fake-ip-filter 每项均为内核可接受域名', fifItems.length>0&&fifItems.every(fifOk), fifItems.filter(x=>!fifOk(x)).join(',')||fifItems.join(' '));
 
 show('汇总', `PASS ${pass}  FAIL ${fail}`);
 process.exit(fail?1:0);

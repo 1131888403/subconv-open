@@ -91,6 +91,8 @@ function collect(obj,found){
 const NODES=[];
 function loadContent(text){
   NODES.length=0;
+  MASTER=[];
+  FILTER_APPLIED={kept:[],removed:[],groups:[]};
   const found=[];
   const t=String(text||'').trim();
   if(!t) return {n:0, format:'空内容'};
@@ -150,8 +152,13 @@ function loadContent(text){
     if(fallback.meta && SUB_META.source!=='Subscription-Userinfo'){ SUB_META=Object.assign(SUB_META,fallback.meta); fallback.drop.forEach(n=>{const i=NODES.indexOf(n);if(i>=0)NODES.splice(i,1);}); }
     dedupeNames(NODES);
     NODES.forEach(n=>{ n._orig=String(n._orig||n.name||''); });
-    applyNameTagsInPlace();
-    return {n:NODES.length, format:fmt};
+    /* 母本 = 解析结果本身（未标注）；随后按删减规则派生 NODES。
+       tagNodes 生成的是新对象，因此 MASTER 里的节点名始终保持原始值。 */
+    MASTER=NODES.slice();
+    const restored=filterLoad(filterScopeId());
+    applyFilterAndTags();
+    if(!restored) renderFilterPanels();
+    return {n:NODES.length, format:fmt, master:MASTER.length, removed:(FILTER_APPLIED.removed||[]).length, restored:restored};
   }
 }
 function parseNameMetadata(list){

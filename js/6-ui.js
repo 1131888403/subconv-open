@@ -80,14 +80,25 @@ async function createConvertedRelay(btn){
   finally{btn.disabled=false;btn.textContent=old;}
 }
 function showNodes(){ $('c-nodes').style.display='block'; $('cnt').textContent=NODES.length+' 个节点'; $('nodes').innerHTML=NODES.map(n=>`<div class="node"><b>${esc(n.name)}</b><small>${esc(n._orig&&n._orig!==n.name?n._orig+' · ':'')}${esc(n.protocol)} · ${esc(n.server)}:${esc(n.port)}</small></div>`).join(''); }
+let urlInputRevision=0;
+function resetUrlResults(){
+  urlInputRevision++;
+  NODES.length=0;
+  SUB_META={source:'browser',upload:0,download:0,total:0,expire:null,used:0,remaining:null,title:null};
+  $('c-nodes').style.display='none'; $('c-meta').style.display='none';
+  $('nodes').innerHTML=''; $('cnt').textContent=''; $('msg').textContent=''; $('msg').className='msg';
+  $('outputs').innerHTML=''; $('empty-out').style.display='block'; $('gmsg').textContent=''; $('gmsg').className='msg';
+}
 async function run(){
+  const revision=urlInputRevision, inputUrl=$('i-url').value.trim(), tab=document.querySelector('.tab.on')?.dataset.t;
   $('loading').style.display='block'; $('msg').textContent=''; SUB_META={source:'browser',upload:0,download:0,total:0,expire:null,used:0,remaining:null};
-  try{let text=''; const tab=document.querySelector('.tab.on')?.dataset.t;
-    if(tab==='url') text=await fetchText($('i-url').value.trim());
+  try{let text='';
+    if(tab==='url') text=await fetchText(inputUrl);
     else if(tab==='file'){const f=$('i-file').files[0]; if(!f)throw Error('请选择文件'); text=await f.text();}
     else text=$('i-text').value;
+    if(tab==='url' && revision!==urlInputRevision) return;
     const r=loadContent(text); if(!r.n)throw Error(r.warn||'无法解析订阅'); $('msg').textContent=`${r.format}，解析到 ${r.n} 个节点`; showNodes(); renderMeta();
-  }catch(e){$('msg').textContent='错误：'+e.message; $('c-nodes').style.display='none';} finally{$('loading').style.display='none';}
+  }catch(e){if(!(tab==='url' && revision!==urlInputRevision)){$('msg').textContent='错误：'+e.message; $('c-nodes').style.display='none';}} finally{$('loading').style.display='none';}
 }
 const GENERATED={}; let genSeq=0;
 function copyText(text){ navigator.clipboard?.writeText(text).then(()=>{ $('gmsg').className='msg ok'; $('gmsg').textContent='已复制到剪贴板'; }).catch(()=>{ $('gmsg').className='msg warn'; $('gmsg').textContent='复制失败，请使用预览框手动复制'; }); }
@@ -110,4 +121,4 @@ function gen(){
 /* ================= 演示数据 ================= */
 function loadDemo(){ const uris=['vless://11111111-2222-3333-4444-555555555555@hk01.example.com:54183?encryption=none&security=reality&type=tcp&sni=demo.example.com&pbk=wfREB0000000000000000000000000000000000000000000000&sid=9480bd1f859c1e#HK01-Demo','vmess://'+b64e(JSON.stringify({v:'2',ps:'US01-WS-Demo',add:'us.example.com',port:'443',id:'b2c3d4e5-f6a7-8901-bcde-f12345678901',net:'ws',path:'/vmess',tls:'tls'}))]; switchTab('text'); $('i-text').value=uris.join('\n'); run(); }
 function switchTab(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));$('p-'+t).classList.add('on');}
-window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});
+window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-url').addEventListener('input',resetUrlResults);$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add local node filtering and export of the filtered subscription.
+- Add reuse-based deduplication with protocol and address/port grouping.
+- Fix stale URL results and keep the public build unbound to any maintainer relay.
+- Replace the unavailable `GEOSITE,proxy` rule with `geolocation-!cn` and pin the GeoSite download URL.
+- Fix invalid `+*.` fake-IP filter entries and add regression coverage.
+- Document that local filtering is not uploaded to or persisted by relay links.
 - Improve documentation for self-hosting, architecture, security, and contributions.
 
 ## 1.0.0 — 2026-08-31

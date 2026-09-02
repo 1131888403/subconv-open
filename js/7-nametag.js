@@ -104,17 +104,26 @@ function endpointKey(n, ipMap){
   return p ? host+':'+p : host;
 }
 
-/* 统计整份订阅里每个端点被多少节点使用（按 type|端点 聚合，跨协议同端口不算复用） */
+/* 聚合键：协议 + 端点。跨协议同端口不算复用。
+   注意必须用 n.protocol —— 解析器把协议写在 protocol 字段上，节点对象没有 type 字段；
+   早先用 n.type 会让协议恒为 undefined，导致「ss:443」和「trojan:443」被错误合并成复用。 */
+function aggKey(n, ipMap){
+  const proto=String(n.protocol||n.type||'?').toLowerCase();
+  return proto+'|'+endpointKey(n, ipMap);
+}
+
+/* 统计整份订阅里每个端点被多少节点使用 */
 function endpointCounts(list, ipMap){
   const m=Object.create(null);
   for(const n of list){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
+    const k=aggKey(n, ipMap);
     m[k]=(m[k]||0)+1;
   }
   return m;
 }
 
-/* 后缀文本。mode=off 且未开重复标注时返回 ''（即不改名）。 */
+/* 后缀文本。mode=off 且未开重复标注时返回 ''（即不改名）。
+   counts 可由调用方传入（删减功能传母本全量计数，避免名字随筛选漂移）。 */
 function tagSuffix(n, counts, ipMap){
   const parts=[];
   if(NAMETAG.mode!=='off'){
@@ -126,8 +135,7 @@ function tagSuffix(n, counts, ipMap){
     parts.push(NAMETAG.mode==='port' ? String(n.port||'') : (host+':'+(n.port||'')));
   }
   if(NAMETAG.markDup){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
-    const c=counts[k]||1;
+    const c=(counts||Object.create(null))[aggKey(n, ipMap)]||1;
     parts.push(c>1 ? ('复用'+c) : '独占');
   }
   if(!parts.length) return '';
@@ -135,11 +143,11 @@ function tagSuffix(n, counts, ipMap){
 }
 
 /* 应用改名：返回新数组/新对象，原数组保持干净 */
-function tagNodes(list, ipMap){
+function tagNodes(list, ipMap, counts){
   if(NAMETAG.mode==='off' && !NAMETAG.markDup) return list;
-  const counts=endpointCounts(list, ipMap);
+  const cts=counts||endpointCounts(list, ipMap);
   return list.map(n=>{
-    const sfx=tagSuffix(n, counts, ipMap);
+    const sfx=tagSuffix(n, cts, ipMap);
     if(!sfx) return n;
     const orig=String(n._orig||n.name||'');
     const c=Object.assign({}, n, { _orig:orig, name:orig+sfx });
@@ -147,11 +155,11 @@ function tagNodes(list, ipMap){
   });
 }
 
-/* 列出复用端点（同一 type+端点被 ≥2 个节点使用），用于面板说明 */
+/* 列出复用端点（同一协议+端点被 ≥2 个节点使用），用于面板说明 */
 function dupReport(list, ipMap){
   const g=Object.create(null);
   for(const n of list){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
+    const k=aggKey(n, ipMap);
     (g[k]=g[k]||[]).push(String(n._orig||n.name||''));
   }
   return Object.entries(g).filter(([,v])=>v.length>1)
@@ -167,6 +175,8 @@ function applyNameTagsInPlace(){
 }
 function refreshNameTags(){
   if(!Array.isArray(NODES) || !NODES.length) return;
+  /* 有母本时走「筛选→标注」管线，复用计数保持基于全量；否则退回旧行为 */
+  if(Array.isArray(MASTER) && MASTER.length){ runFilter(); return; }
   applyNameTagsInPlace();
   showNodes();
   const msg=$('msg');

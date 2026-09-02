@@ -2889,17 +2889,26 @@ function endpointKey(n, ipMap){
   return p ? host+':'+p : host;
 }
 
-/* 统计整份订阅里每个端点被多少节点使用（按 type|端点 聚合，跨协议同端口不算复用） */
+/* 聚合键：协议 + 端点。跨协议同端口不算复用。
+   注意必须用 n.protocol —— 解析器把协议写在 protocol 字段上，节点对象没有 type 字段；
+   早先用 n.type 会让协议恒为 undefined，导致「ss:443」和「trojan:443」被错误合并成复用。 */
+function aggKey(n, ipMap){
+  const proto=String(n.protocol||n.type||'?').toLowerCase();
+  return proto+'|'+endpointKey(n, ipMap);
+}
+
+/* 统计整份订阅里每个端点被多少节点使用 */
 function endpointCounts(list, ipMap){
   const m=Object.create(null);
   for(const n of list){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
+    const k=aggKey(n, ipMap);
     m[k]=(m[k]||0)+1;
   }
   return m;
 }
 
-/* 后缀文本。mode=off 且未开重复标注时返回 ''（即不改名）。 */
+/* 后缀文本。mode=off 且未开重复标注时返回 ''（即不改名）。
+   counts 可由调用方传入（删减功能传母本全量计数，避免名字随筛选漂移）。 */
 function tagSuffix(n, counts, ipMap){
   const parts=[];
   if(NAMETAG.mode!=='off'){
@@ -2911,8 +2920,7 @@ function tagSuffix(n, counts, ipMap){
     parts.push(NAMETAG.mode==='port' ? String(n.port||'') : (host+':'+(n.port||'')));
   }
   if(NAMETAG.markDup){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
-    const c=counts[k]||1;
+    const c=(counts||Object.create(null))[aggKey(n, ipMap)]||1;
     parts.push(c>1 ? ('复用'+c) : '独占');
   }
   if(!parts.length) return '';
@@ -2920,11 +2928,11 @@ function tagSuffix(n, counts, ipMap){
 }
 
 /* 应用改名：返回新数组/新对象，原数组保持干净 */
-function tagNodes(list, ipMap){
+function tagNodes(list, ipMap, counts){
   if(NAMETAG.mode==='off' && !NAMETAG.markDup) return list;
-  const counts=endpointCounts(list, ipMap);
+  const cts=counts||endpointCounts(list, ipMap);
   return list.map(n=>{
-    const sfx=tagSuffix(n, counts, ipMap);
+    const sfx=tagSuffix(n, cts, ipMap);
     if(!sfx) return n;
     const orig=String(n._orig||n.name||'');
     const c=Object.assign({}, n, { _orig:orig, name:orig+sfx });
@@ -2932,11 +2940,11 @@ function tagNodes(list, ipMap){
   });
 }
 
-/* 列出复用端点（同一 type+端点被 ≥2 个节点使用），用于面板说明 */
+/* 列出复用端点（同一协议+端点被 ≥2 个节点使用），用于面板说明 */
 function dupReport(list, ipMap){
   const g=Object.create(null);
   for(const n of list){
-    const k=(n.type||'?')+'|'+endpointKey(n, ipMap);
+    const k=aggKey(n, ipMap);
     (g[k]=g[k]||[]).push(String(n._orig||n.name||''));
   }
   return Object.entries(g).filter(([,v])=>v.length>1)
@@ -2952,6 +2960,8 @@ function applyNameTagsInPlace(){
 }
 function refreshNameTags(){
   if(!Array.isArray(NODES) || !NODES.length) return;
+  /* 有母本时走「筛选→标注」管线，复用计数保持基于全量；否则退回旧行为 */
+  if(Array.isArray(MASTER) && MASTER.length){ runFilter(); return; }
   applyNameTagsInPlace();
   showNodes();
   const msg=$('msg');
@@ -2974,6 +2984,267 @@ async function resolveNodeIPs(btn){
     refreshNameTags();
   }catch(e){ if(m){m.className='msg err';m.textContent='解析 IP 失败：'+e.message;} }
   finally{ if(btn){btn.disabled=false;btn.textContent=old;} }
+}
+
+/* ============ 节点删减：手动隐藏 / 规则删除 / 复用去重 ============ */
+/* 设计约定（改动前请先读）：
+   - MASTER 是「解析完成、尚未标注」的母本列表；删减和标注都从它派生，
+     这样反复切换筛选条件不会丢节点，也不会让名字越改越长。
+   - 复用计数一律基于 MASTER 统计。因为「几个节点名指向同一台机器」是机场的
+     客观属性，如果基于当前列表统计，用户删掉 4 个之后剩下那个会从「复用5」
+     变成「独占」，名字随筛选漂移。
+   - 三档规则叠加，优先级：手动隐藏 > 复用去重 > 关键词规则。
+   - 节点稳定标识用 protocol|server|port|原名（nodeKey）。不能用 name，因为
+     标注会改写 name；也不能只用 server:port，因为同端点有多个节点名。 */
+
+const FILTER = { hidden:Object.create(null), kw:'', dropDup:false };
+let MASTER = [];
+let FILTER_APPLIED = { kept:[], removed:[], groups:[] };
+let FILTER_SCOPE = 'mem';
+
+/* 节点唯一键（含原名，机场改名后需重新删，UI 已提示） */
+function nodeKey(n){
+  return [String(n.protocol||'?'), String(n.server||''), String(n.port||''), String(n._orig||n.name||'')].join('\u0001');
+}
+function strHash(s){
+  let h=5381; const x=String(s||'');
+  for(let i=0;i<x.length;i++) h=(((h<<5)+h)+x.charCodeAt(i))>>>0;
+  return h.toString(36);
+}
+
+/* ---------- 关键词规则 ----------
+   单个词命中即删（OR）；`!` 前缀为排除，命中排除词的节点不删。
+     hk              名字包含 hk
+     type:hysteria2  按协议（别名 hy2/hysteria 同义）
+     port:34567      按端口
+     re/^🇭🇰/         正则（第二个 / 后可加 i 等标志）
+     纯 `!hk`        不触发删除（只作为其他规则的豁免） */
+const PROTO_ALIAS={hy2:'hysteria2',hysteria:'hysteria2',ssr:'ssr',shadowsocks:'ss',v2ray:'vmess'};
+function normProto(p){ const s=String(p||'').toLowerCase(); return PROTO_ALIAS[s]||s; }
+
+function parseKwRules(s){
+  const out={name:[],not:[],types:[],notTypes:[],ports:[],notPorts:[],re:[],notRe:[]};
+  String(s||'').split(/[\s,，、;；]+/).filter(Boolean).forEach(tk=>{
+    const neg=/^[!！]/.test(tk), x=tk.replace(/^[!！]/,'');
+    if(!x) return;
+    let m;
+    if((m=/^(?:type|proto|协议)[:：](.*)$/i.exec(x))){ const v=normProto(m[1]); if(v)(neg?out.notTypes:out.types).push(v); return; }
+    if((m=/^(?:port|端口)[:：](\d+)$/.exec(x))){ const v=+m[1]; if(v)(neg?out.notPorts:out.ports).push(v); return; }
+    if((m=/^re\/(.+)\/([a-z]*)$/i.exec(x))){ try{const r=new RegExp(m[1],m[2]);(neg?out.notRe:out.re).push(r);}catch(e){} return; }
+    /* 裸数字：多数人想按端口删，同时也匹配名字（如「0.1x」「1倍率」）。
+       两者取并集，符合直觉；要只匹配名字请用 re/^443$/。 */
+    if(/^\d+$/.test(x)){ const v=+x; if(v && !neg) out.ports.push(v); }
+    (neg?out.not:out.name).push(x.toLowerCase());
+  });
+  out.active=!!(out.name.length||out.types.length||out.ports.length||out.re.length);
+  return out;
+}
+
+/* 返回命中的类别数组（空=未命中；豁免则返回 null），供展示时说明「为什么删」 */
+function ruleHits(n, r){
+  const raw=String(n._orig||n.name||'');
+  const low=raw.toLowerCase(), proto=normProto(n.protocol), port=+n.port||0;
+  const hits=[];
+  if(r.name.some(k=>low.indexOf(k)>=0)) hits.push('关键词');
+  if(r.types.some(t=>proto===t))        hits.push('协议');
+  if(r.ports.some(p=>port===p))         hits.push('端口');
+  if(r.re.some(x=>{ try{return x.test(raw);}catch(e){return false;} })) hits.push('正则');
+  if(!hits.length) return null;
+  const exempt=r.not.some(k=>low.indexOf(k)>=0)
+            || r.notTypes.some(t=>proto===t)
+            || r.notPorts.some(p=>port===p)
+            || r.notRe.some(x=>{ try{return x.test(raw);}catch(e){return false;} });
+  return exempt ? null : hits;
+}
+
+/* ---------- 主流程：母本 → 筛选 → 标注 → NODES ---------- */
+function applyFilters(master, counts){
+  const hidden=FILTER.hidden, kw=parseKwRules(FILTER.kw), ipMap=NAMETAG.ipMap;
+  const kept=[], removed=[];
+  /* 复用组代表：隐藏后组内第一个存活的节点，保证结果稳定可预期 */
+  const rep=Object.create(null);
+  if(FILTER.dropDup){
+    for(const n of master){
+      if(hidden[nodeKey(n)]) continue;
+      const k=aggKey(n, ipMap);
+      if(counts[k]>1 && !rep[k]) rep[k]=nodeKey(n);
+    }
+  }
+  for(const n of master){
+    const k=nodeKey(n), ak=aggKey(n, ipMap);
+    if(hidden[k]){ removed.push({node:n, kind:'手动', why:'手动'}); continue; }
+    if(FILTER.dropDup && counts[ak]>1 && rep[ak]!==k){ removed.push({node:n, kind:'复用去重', why:'复用去重'}); continue; }
+    if(kw.active){ const hs=ruleHits(n, kw);
+      if(hs){ removed.push({node:n, kind:'关键词', why:hs.join('+')}); continue; } }
+    kept.push(n);
+  }
+  return {kept, removed, groups:dupReport(master, ipMap)};
+}
+
+function applyFilterAndTags(){
+  if(!Array.isArray(MASTER) || !MASTER.length){
+    NODES.length=0; FILTER_APPLIED={kept:[],removed:[],groups:[]}; return;
+  }
+  const counts=endpointCounts(MASTER, NAMETAG.ipMap);
+  FILTER_APPLIED=applyFilters(MASTER, counts);
+  const tagged=tagNodes(FILTER_APPLIED.kept, NAMETAG.ipMap, counts);
+  NODES.length=0;
+  Array.prototype.push.apply(NODES, tagged);
+}
+
+/* ---------- 持久化：按「输入来源」存，换订阅不会串味 ---------- */
+function currentTab(){
+  try{ const el=document.querySelector('.tab.on'); return (el&&el.dataset&&el.dataset.t)||'url'; }catch(e){ return 'url'; }
+}
+function filterScopeId(){
+  const tab=currentTab();
+  try{
+    if(tab==='url'){ const v=String(($('i-url')&&$('i-url').value)||'').trim(); if(v) return 'url:'+v; }
+    if(tab==='file'){ const f=$('i-file')&&$('i-file').files&&$('i-file').files[0]; if(f) return 'file:'+f.name+':'+(f.size||0); }
+    if(tab==='text'){ const v=String(($('i-text')&&$('i-text').value)||''); if(v.trim()) return 'txt:'+strHash(v.length+'#'+v.slice(0,65536)); }
+  }catch(e){}
+  return 'mem';
+}
+function filterStoreKey(){ return 'subconv_filter::'+strHash(FILTER_SCOPE); }
+function filterSave(){
+  FILTER_SCOPE=filterScopeId();
+  if(FILTER_SCOPE==='mem') return;              /* 粘贴/文件内容无稳定标识，只在本次会话生效 */
+  try{
+    localStorage.setItem(filterStoreKey(), JSON.stringify({
+      v:1, kw:FILTER.kw, dropDup:!!FILTER.dropDup, hidden:Object.keys(FILTER.hidden)
+    }));
+  }catch(e){}
+}
+function filterLoad(scope){
+  FILTER_SCOPE=scope||filterScopeId();
+  FILTER.hidden=Object.create(null); FILTER.kw=''; FILTER.dropDup=false;
+  if(FILTER_SCOPE==='mem') return false;
+  try{
+    const j=JSON.parse(localStorage.getItem(filterStoreKey())||'null');
+    if(!j||typeof j!=='object') return false;
+    FILTER.kw=String(j.kw||''); FILTER.dropDup=!!j.dropDup;
+    (Array.isArray(j.hidden)?j.hidden:[]).forEach(k=>{ FILTER.hidden[k]=1; });
+    return true;
+  }catch(e){ return false; }
+}
+
+/* ---------- UI ---------- */
+function filterSummary(){
+  const t=MASTER.length, k=FILTER_APPLIED.kept.length||0, d=t-k;
+  const parts=['母本 '+t, '生效 '+k];
+  if(d) parts.push('已删 '+d);
+  const manual=FILTER_APPLIED.removed.filter(x=>x.kind==='手动').length;
+  const dup=FILTER_APPLIED.removed.filter(x=>x.kind==='复用去重').length;
+  const kw=FILTER_APPLIED.removed.filter(x=>x.kind==='关键词').length;
+  if(manual) parts.push('手动 '+manual);
+  if(dup) parts.push('复用去重 '+dup);
+  if(kw) parts.push('关键词 '+kw);
+  return parts.join(' · ');
+}
+
+function renderFilterPanels(){
+  const box=$('f-removed');
+  if(box){
+    const rs=FILTER_APPLIED.removed||[];
+    box.style.display=rs.length?'block':'none';
+    box.innerHTML='<b>被删除的节点（点 ↺ 恢复）</b>'+rs.slice(0,200).map((x,i)=>
+      '<div class="f-row"><span class="f-nm">'+esc(String(x.node._orig||x.node.name||''))+
+      '</span><span class="f-ad">'+esc(x.node.protocol)+' · '+esc(x.node.server)+':'+esc(x.node.port)+'</span>'+
+      '<span class="f-why">'+esc(x.why)+'</span>'+
+      '<button type="button" class="node-x" title="恢复" onclick="restoreRemoved('+i+')">↺</button></div>').join('')+
+      (rs.length>200?'<div class="f-more">…另有 '+(rs.length-200)+' 个未列出</div>':'');
+  }
+  const gb=$('f-groups');
+  if(gb){
+    const gs=FILTER_APPLIED.groups||[];
+    gb.style.display=gs.length?'block':'none';
+    if(gs.length){
+      /* 按「当前存活数」给按钮标数字：母本成员可能已被手动删除，
+         用 names.length-1 会承诺一个做不到的数字。 */
+      const keptCnt=Object.create(null);
+      for(const n of (FILTER_APPLIED.kept||[])){ const k=aggKey(n, NAMETAG.ipMap); keptCnt[k]=(keptCnt[k]||0)+1; }
+      gb.innerHTML='<b>复用入口（同协议 + 同地址端口）</b>'+gs.map((g,i)=>{
+        const alive=keptCnt[g.type+'|'+g.endpoint]||0;
+        const btn=alive>1
+          ? '<button type="button" class="node-x" title="该组只留第一个存活节点，其余隐藏" onclick="hideGroupExtra('+i+')">留1删'+(alive-1)+'</button>'
+          : '<span class="f-why">已无多余</span>';
+        return '<div class="f-row"><span class="f-ad">'+esc(g.type)+' · '+esc(g.endpoint)+'</span>'+
+               '<span class="f-nm">'+esc(g.names.join(' / '))+'</span>'+btn+'</div>';
+      }).join('');
+    }
+  }
+  const st=$('f-stats');
+  if(st) st.textContent=filterSummary();
+  const inp=$('f-kw');
+  if(inp && inp.value!==FILTER.kw) inp.value=FILTER.kw;
+  const dd=document.querySelector('#f-dup');
+  if(dd && dd.classList){ dd.classList.toggle('on',!!FILTER.dropDup); if(dd.setAttribute) dd.setAttribute('aria-pressed',String(!!FILTER.dropDup)); }
+}
+
+function runFilter(){
+  applyFilterAndTags();
+  showNodes();
+  renderFilterPanels();
+  const m=$('msg');
+  if(m){
+    const d=(FILTER_APPLIED.removed||[]).length;
+    m.className=d?'msg warn':'msg';
+    m.textContent=d?('已删 '+d+' 个节点，生效 '+FILTER_APPLIED.kept.length+' 个；生成配置与二维码均使用删减后的结果')
+                   :'未删除任何节点';
+  }
+}
+
+function toggleDupDrop(){
+  FILTER.dropDup=!FILTER.dropDup;
+  filterSave(); runFilter();
+}
+function filterInputChanged(v){
+  FILTER.kw=String(v||'');
+  filterSave();
+  runFilter();
+}
+function toggleNodeHidden(i){
+  const n=NODES[i]; if(!n) return;
+  FILTER.hidden[nodeKey(n)]=1;
+  filterSave(); runFilter();
+}
+function restoreRemoved(i){
+  const x=(FILTER_APPLIED.removed||[])[i]; if(!x) return;
+  delete FILTER.hidden[nodeKey(x.node)];
+  filterSave(); runFilter();
+}
+/* 一键：某个复用组只留第一个【当前仍存活】的节点，其余隐藏。
+   代表不能取母本的 names[0] —— 它可能已被手动删除，那样会把整组删光。 */
+function hideGroupExtra(gi){
+  const g=(FILTER_APPLIED.groups||[])[gi]; if(!g) return;
+  const want=g.type+'|'+g.endpoint;
+  const keptList=FILTER_APPLIED.kept||[];
+  let keepKey=null;
+  for(const n of keptList){ if(aggKey(n, NAMETAG.ipMap)===want){ keepKey=nodeKey(n); break; } }
+  if(keepKey===null) return;                 /* 组内已无存活节点，不再操作 */
+  for(const n of MASTER){
+    if(aggKey(n, NAMETAG.ipMap)===want && nodeKey(n)!==keepKey) FILTER.hidden[nodeKey(n)]=1;
+  }
+  filterSave(); runFilter();
+}
+function clearAllHidden(){
+  FILTER.hidden=Object.create(null);
+  FILTER.kw=''; FILTER.dropDup=false;
+  filterSave(); runFilter();
+}
+function copyRemovedList(){
+  const rs=FILTER_APPLIED.removed||[];
+  if(!rs.length){ const m=$('msg'); if(m){m.className='msg warn';m.textContent='当前没有删除任何节点';} return; }
+  copyText(rs.map(x=>String(x.node._orig||x.node.name||'')).join('\n'));
+}
+function exportFilteredSubscription(){
+  const tagged=tagNodes(FILTER_APPLIED.kept, NAMETAG.ipMap, endpointCounts(MASTER, NAMETAG.ipMap));
+  const lines=tagged.map(n=>node2uri(n)).filter(Boolean);
+  if(!lines.length){ const m=$('msg'); if(m){m.className='msg err';m.textContent='没有可导出的节点';} return; }
+  addResult($('outputs'),'删减后订阅（URI）','filtered-subscription.txt','text/plain', b64e(lines.join('\n')));
+  $('empty-out').style.display='none';
+  const g=$('gmsg'); if(g){g.className='msg ok';g.textContent='已导出删减后的订阅（'+lines.length+' 个节点，Base64 URI）';}
+  $('result-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 /* ================= Clash dict → Node ================= */
@@ -3069,6 +3340,8 @@ function collect(obj,found){
 const NODES=[];
 function loadContent(text){
   NODES.length=0;
+  MASTER=[];
+  FILTER_APPLIED={kept:[],removed:[],groups:[]};
   const found=[];
   const t=String(text||'').trim();
   if(!t) return {n:0, format:'空内容'};
@@ -3128,8 +3401,13 @@ function loadContent(text){
     if(fallback.meta && SUB_META.source!=='Subscription-Userinfo'){ SUB_META=Object.assign(SUB_META,fallback.meta); fallback.drop.forEach(n=>{const i=NODES.indexOf(n);if(i>=0)NODES.splice(i,1);}); }
     dedupeNames(NODES);
     NODES.forEach(n=>{ n._orig=String(n._orig||n.name||''); });
-    applyNameTagsInPlace();
-    return {n:NODES.length, format:fmt};
+    /* 母本 = 解析结果本身（未标注）；随后按删减规则派生 NODES。
+       tagNodes 生成的是新对象，因此 MASTER 里的节点名始终保持原始值。 */
+    MASTER=NODES.slice();
+    const restored=filterLoad(filterScopeId());
+    applyFilterAndTags();
+    if(!restored) renderFilterPanels();
+    return {n:NODES.length, format:fmt, master:MASTER.length, removed:(FILTER_APPLIED.removed||[]).length, restored:restored};
   }
 }
 function parseNameMetadata(list){
@@ -3563,7 +3841,7 @@ function buildClash(list,opt){
     const mediaG=hasStr('🌍 国外媒体')?'🌍 国外媒体':P;
     [['GEOSITE,youtube',mediaG],['GEOSITE,netflix',mediaG],['GEOSITE,twitter',P],
      ['GEOSITE,openai',P],['GEOSITE,anthropic',P],['GEOSITE,google',P],['GEOSITE,github',P],
-     ['GEOSITE,proxy',P],['GEOSITE,category-ads-all','REJECT'],
+     ['GEOSITE,geolocation-!cn',P],['GEOSITE,category-ads-all','REJECT'],
      ['GEOSITE,private','DIRECT'],['GEOSITE,geolocation-cn','DIRECT'],
      ['GEOIP,CN','DIRECT,no-resolve'],['GEOIP,LAN','DIRECT,no-resolve'],
      ['GEOIP,PRIVATE','DIRECT,no-resolve']].forEach(([r,t])=>policy.push(r+','+t));
@@ -3576,7 +3854,7 @@ function buildClash(list,opt){
     'external-controller-cors':{'allow-private-network':true, 'allow-origins':['*']},
     profile:{'store-selected':true,'store-fake-ip':true},
     'geodata-mode':true, 'geo-auto-update':true, 'geo-update-interval':24,
-    'geox-url':{'geoip':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat'},
+    'geox-url':{'geoip':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat','geosite':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat'},
     dns:opt.dns===false?undefined:CLASH_DNS,
     proxies, 'proxy-groups':pg, rules:policy
   });
@@ -3589,7 +3867,7 @@ const CLASH_DNS={
   fallback:['https://dns.cloudflare.com/dns-query','https://dns.google/dns-query'],
   'fallback-filter':{geoip:true,'geoip-code':'CN',domain:['+.google.com','+.githubusercontent.com']},
   'fake-ip-filter':['*.lan','*.local','*.localhost','localhost.ptlogin2.qq.com','+.stun.*.*',
-    '*.msftconnecttest.com','*.msftncsi.com','xbox.*.*.microsoft.com','+*.playstation.net','+*.cybergame.net']
+    '*.msftconnecttest.com','*.msftncsi.com','xbox.*.*.microsoft.com','+.playstation.net','+.cybergame.net']
 };
 
 /* ================= sing-box 完整配置 ================= */
@@ -3855,14 +4133,25 @@ async function createConvertedRelay(btn){
   finally{btn.disabled=false;btn.textContent=old;}
 }
 function showNodes(){ $('c-nodes').style.display='block'; $('cnt').textContent=NODES.length+' 个节点'; $('nodes').innerHTML=NODES.map(n=>`<div class="node"><b>${esc(n.name)}</b><small>${esc(n._orig&&n._orig!==n.name?n._orig+' · ':'')}${esc(n.protocol)} · ${esc(n.server)}:${esc(n.port)}</small></div>`).join(''); }
+let urlInputRevision=0;
+function resetUrlResults(){
+  urlInputRevision++;
+  NODES.length=0;
+  SUB_META={source:'browser',upload:0,download:0,total:0,expire:null,used:0,remaining:null,title:null};
+  $('c-nodes').style.display='none'; $('c-meta').style.display='none';
+  $('nodes').innerHTML=''; $('cnt').textContent=''; $('msg').textContent=''; $('msg').className='msg';
+  $('outputs').innerHTML=''; $('empty-out').style.display='block'; $('gmsg').textContent=''; $('gmsg').className='msg';
+}
 async function run(){
+  const revision=urlInputRevision, inputUrl=$('i-url').value.trim(), tab=document.querySelector('.tab.on')?.dataset.t;
   $('loading').style.display='block'; $('msg').textContent=''; SUB_META={source:'browser',upload:0,download:0,total:0,expire:null,used:0,remaining:null};
-  try{let text=''; const tab=document.querySelector('.tab.on')?.dataset.t;
-    if(tab==='url') text=await fetchText($('i-url').value.trim());
+  try{let text='';
+    if(tab==='url') text=await fetchText(inputUrl);
     else if(tab==='file'){const f=$('i-file').files[0]; if(!f)throw Error('请选择文件'); text=await f.text();}
     else text=$('i-text').value;
+    if(tab==='url' && revision!==urlInputRevision) return;
     const r=loadContent(text); if(!r.n)throw Error(r.warn||'无法解析订阅'); $('msg').textContent=`${r.format}，解析到 ${r.n} 个节点`; showNodes(); renderMeta();
-  }catch(e){$('msg').textContent='错误：'+e.message; $('c-nodes').style.display='none';} finally{$('loading').style.display='none';}
+  }catch(e){if(!(tab==='url' && revision!==urlInputRevision)){$('msg').textContent='错误：'+e.message; $('c-nodes').style.display='none';}} finally{$('loading').style.display='none';}
 }
 const GENERATED={}; let genSeq=0;
 function copyText(text){ navigator.clipboard?.writeText(text).then(()=>{ $('gmsg').className='msg ok'; $('gmsg').textContent='已复制到剪贴板'; }).catch(()=>{ $('gmsg').className='msg warn'; $('gmsg').textContent='复制失败，请使用预览框手动复制'; }); }
@@ -3885,7 +4174,7 @@ function gen(){
 /* ================= 演示数据 ================= */
 function loadDemo(){ const uris=['vless://11111111-2222-3333-4444-555555555555@hk01.example.com:54183?encryption=none&security=reality&type=tcp&sni=demo.example.com&pbk=wfREB0000000000000000000000000000000000000000000000&sid=9480bd1f859c1e#HK01-Demo','vmess://'+b64e(JSON.stringify({v:'2',ps:'US01-WS-Demo',add:'us.example.com',port:'443',id:'b2c3d4e5-f6a7-8901-bcde-f12345678901',net:'ws',path:'/vmess',tls:'tls'}))]; switchTab('text'); $('i-text').value=uris.join('\n'); run(); }
 function switchTab(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));$('p-'+t).classList.add('on');}
-window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});
+window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-url').addEventListener('input',resetUrlResults);$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});
 
 /* ================= 二维码（纯前端本地生成） =================
  * 依赖 vendor/qrcode.js（Kazuhiko Arase 的 qrcode-generator，MIT License）。

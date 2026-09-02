@@ -1,6 +1,7 @@
 # 自建订阅中转服务部署
 
-本目录的 `fetch_proxy.py` 是一个零依赖（仅 Python 标准库）的订阅抓取中转服务，
+本目录的 `fetch_proxy_v2.py` 是生产推荐的零依赖（仅 Python 标准库）的订阅抓取中转服务；
+`fetch_proxy.py` 是保留的 v1 兼容/回滚版本。
 用于解决两个问题：
 
 1. **浏览器无法修改 User-Agent**：多数机场按 UA 下发不同内容，用浏览器 UA 常返回空壳配置。
@@ -18,7 +19,7 @@
       │
       │  proxy_pass（注入服务端 Token）
       ▼
-127.0.0.1:8787  fetch_proxy.py（systemd: subconv-fetch.service）
+127.0.0.1:8787  fetch_proxy_v2.py（systemd: subconv-fetch.service）
       │
       ▼  按白名单 UA 实时抓取
 上游机场订阅接口

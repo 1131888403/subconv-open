@@ -174,7 +174,7 @@ function buildClash(list,opt){
     const mediaG=hasStr('🌍 国外媒体')?'🌍 国外媒体':P;
     [['GEOSITE,youtube',mediaG],['GEOSITE,netflix',mediaG],['GEOSITE,twitter',P],
      ['GEOSITE,openai',P],['GEOSITE,anthropic',P],['GEOSITE,google',P],['GEOSITE,github',P],
-     ['GEOSITE,proxy',P],['GEOSITE,category-ads-all','REJECT'],
+     ['GEOSITE,geolocation-!cn',P],['GEOSITE,category-ads-all','REJECT'],
      ['GEOSITE,private','DIRECT'],['GEOSITE,geolocation-cn','DIRECT'],
      ['GEOIP,CN','DIRECT,no-resolve'],['GEOIP,LAN','DIRECT,no-resolve'],
      ['GEOIP,PRIVATE','DIRECT,no-resolve']].forEach(([r,t])=>policy.push(r+','+t));
@@ -187,7 +187,7 @@ function buildClash(list,opt){
     'external-controller-cors':{'allow-private-network':true, 'allow-origins':['*']},
     profile:{'store-selected':true,'store-fake-ip':true},
     'geodata-mode':true, 'geo-auto-update':true, 'geo-update-interval':24,
-    'geox-url':{'geoip':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat'},
+    'geox-url':{'geoip':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geoip.dat','geosite':'https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@release/geosite.dat'},
     dns:opt.dns===false?undefined:CLASH_DNS,
     proxies, 'proxy-groups':pg, rules:policy
   });
@@ -200,7 +200,7 @@ const CLASH_DNS={
   fallback:['https://dns.cloudflare.com/dns-query','https://dns.google/dns-query'],
   'fallback-filter':{geoip:true,'geoip-code':'CN',domain:['+.google.com','+.githubusercontent.com']},
   'fake-ip-filter':['*.lan','*.local','*.localhost','localhost.ptlogin2.qq.com','+.stun.*.*',
-    '*.msftconnecttest.com','*.msftncsi.com','xbox.*.*.microsoft.com','+*.playstation.net','+*.cybergame.net']
+    '*.msftconnecttest.com','*.msftncsi.com','xbox.*.*.microsoft.com','+.playstation.net','+.cybergame.net']
 };
 
 /* ================= sing-box 完整配置 ================= */
