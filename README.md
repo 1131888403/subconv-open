@@ -188,7 +188,7 @@ node test-js.js
 python3 -m py_compile converter.py fetch_proxy.py fetch_proxy_v2.py webui.py
 ```
 
-当前前端回归测试覆盖输入解析、格式互转、Reality 字段、节点分组、节点删减、复用去重、二维码和 Clash GeoSite/fake-ip-filter 规则，结果应为 `PASS 134  FAIL 0`。
+当前前端回归测试覆盖输入解析、格式互转、Reality 字段、节点分组、节点删减、复用去重、二维码和 Clash GeoSite/fake-ip-filter 规则，结果应为 `PASS 136  FAIL 0`。
 
 ## 自建中转
 
