@@ -115,6 +115,9 @@ try{
   const y=run(`parseYAML(${JSON.stringify(out.clash)})`);
   chk('clash 合法 YAML', !!y.proxies && y.proxies.length===7, y&&y.proxies?y.proxies.length:'-');
   chk('clash reality-opts 连字符', y.proxies[0]['reality-opts']['public-key'].startsWith('wfREB'), JSON.stringify(y.proxies[0]['reality-opts']));
+  const realityIds=(y.proxies||[]).map(p=>p['reality-opts']&&p['reality-opts']['short-id']).filter(Boolean);
+  chk('clash Reality short-id 全为字符串', realityIds.length===7&&realityIds.every(x=>typeof x==='string'), JSON.stringify(realityIds));
+  chk('clash Reality short-id 强制引号', (out.clash.match(/short-id: \"/g)||[]).length===7, out.clash.match(/short-id:.*$/gm));
   chk('clash 有 proxy-groups', Array.isArray(y['proxy-groups'])&&y['proxy-groups'].length>0, String(y['proxy-groups'].length));
   chk('clash 有 rules', Array.isArray(y.rules)&&y.rules.length>5, String(y.rules.length));
   chk('clash 无 null 值输出', !out.clash.includes(': null'), (out.clash.match(/^\s*[\w-]+: null/m)||[''])[0]);
