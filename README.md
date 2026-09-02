@@ -18,6 +18,87 @@
 - 支持本地生成订阅二维码，二维码内容不会上传第三方；
 - 可选的 `fetch_proxy_v2.py` 自建中转，包含 SSRF 防护、缓存、User-Agent 回退、relay 链接和 Token 脱敏。
 
+## 适合什么场景
+
+SubConv 适合这些情况：
+
+- 机场只提供一种订阅格式，但你的客户端需要另一种格式；
+- 机场按 User-Agent 返回不同内容，浏览器拿到空配置或错误格式；
+- 机场订阅没有 CORS 响应头，网页无法直接读取；
+- 节点很多，需要按协议、端口、关键词、正则或复用入口删减；
+- 想把同一个订阅转换成 Clash、sing-box、V2Ray、Surge 或 Quantumult X 格式。
+
+SubConv 只负责解析和转换订阅，不提供节点、不检测节点质量，也不会替你获取没有权限使用的订阅。
+
+## 支持范围
+
+### 输入格式
+
+| 输入 | 说明 |
+|------|------|
+| URI 列表 | 明文节点 URI，或 Base64 编码的 URI 订阅 |
+| Clash | Clash / Clash Meta YAML 配置 |
+| sing-box | sing-box JSON 配置 |
+| Surge | Surge 配置文件 |
+| Quantumult X | Quantumult X 配置中的节点格式 |
+
+### 输出格式
+
+| 输出 | 适用客户端 |
+|------|------------|
+| Clash / Clash Meta | Clash Meta、Mihomo、Clash Verge 等 |
+| sing-box | sing-box 及其衍生客户端 |
+| V2Ray | V2RayN、V2RayNG、Qv2ray 等 |
+| Surge | Surge |
+| Quantumult X | Quantumult X |
+
+### 协议
+
+网页端和本地转换器支持 VMess、VLESS（包括 Reality）、Trojan、Shadowsocks、Hysteria2 / `hy2`、Tuic、WireGuard、AnyTLS、SOCKS5 和 HTTP/HTTPS 等常见协议。不同输出格式对协议字段的支持由目标客户端决定；例如 Hysteria2、Tuic 和 VLESS Reality 优先导出到 Clash Meta 或 sing-box。
+
+## 网页使用流程
+
+1. 打开仓库中的 `index.html`，或打开你部署后的网页地址。
+2. 在“URL”“文件”或“粘贴内容”中提供订阅。
+3. 如果 URL 直连受到 CORS 限制，改用粘贴内容，或配置自己的 relay。
+4. 等待网页显示节点数量和解析格式，先检查节点数是否符合预期。
+5. 选择输出格式和需要的选项，生成并下载配置。
+6. 将文件导入对应客户端；Clash 新协议优先选择 Clash Meta / Mihomo。
+
+网页解析完全在浏览器本地完成。订阅 URL 只有在你选择 URL 抓取或自建 relay 时才会发送到对应服务；二维码由浏览器本地生成，不上传第三方。
+
+## 节点删减
+
+解析完成后，可以从节点列表逐个删除，也可以使用规则批量删减：
+
+| 写法 | 作用 |
+|------|------|
+| `hk` | 节点名称包含关键词即删除 |
+| `type:hysteria2` | 按协议删除，`hy2` / `hysteria` 是别名 |
+| `port:443` | 按端口删除 |
+| `re/^🇺🇸/i` | 按正则表达式删除 |
+| `！hk` | 豁免包含 `hk` 的节点 |
+| 删除复用节点 | 同协议、同地址和端口只保留第一个 |
+
+多个规则之间是“或”关系，命中任一规则就会删除。删除状态按输入来源保存在浏览器本地；同一 URL 或同一份文本再次导入时可以恢复。订阅内容发生变化后不会强行套用旧删除记录，以避免误删新节点。
+
+删减后的 Clash、sing-box、V2Ray 等输出只包含当前存活节点。“删减后订阅”是一次性导出的 Base64 URI 文件，不是动态订阅。
+
+> **重要边界**：网页删减不会上传到服务器，也不会写入已经创建的 relay 链接。需要持续更新时，请用原始订阅地址创建 relay；需要固定节点集合时，删减后导出文件并直接导入客户端。
+
+## Clash 分流规则与 GeoSite
+
+生成 Clash 配置时可以选择基础分流规则，包含常用服务、广告拦截、私有地址、中国域名和中国 IP 直连。非中国域名使用 `geolocation-!cn`，并显式配置 MetaCubeX GeoSite 下载地址。
+
+如果客户端报错 `list proxy not found in GeoSite.dat`：
+
+1. 删除或更新客户端缓存的 `GeoSite.dat`；
+2. 重新导入网页生成的最新配置；
+3. 确认客户端允许下载 GeoSite 数据；
+4. 不要把规则手动改回已经不存在的 `GEOSITE,proxy`。
+
+GeoSite 属于客户端外部数据，不随 SubConv 网页内置。网络无法下载 GeoSite 时，客户端的分流规则可能无法加载，但节点转换本身不受影响。
+
 ## 在线使用
 
 项目不绑定维护者的中转服务器。下载仓库中的 `index.html` 后，可以直接用浏览器打开，或部署到任意静态网站。
@@ -36,11 +117,30 @@
 
 ### 网页版
 
+仓库已经包含可直接打开的 `index.html`。如果修改了 `template.html` 或 `js/` 源码，重新构建：
+
 ```sh
 node build.js
 ```
 
-执行后会生成独立的 `index.html`，将它部署到静态网站即可。
+执行后会重新生成独立的 `app.js` 和 `index.html`，将 `index.html` 部署到静态网站即可。网页不需要 npm、前端框架或外部 CDN。
+
+### 本地网页服务器
+
+直接打开文件通常已经够用；如浏览器限制本地文件能力，可以启动仓库自带的 Web UI：
+
+```sh
+pip install pyyaml flask
+python3 webui.py
+# 浏览器打开 http://127.0.0.1:5000
+```
+
+### 输出选择建议
+
+- 使用 Hysteria2、Tuic 或 VLESS Reality：选择 Clash Meta / Mihomo 或 sing-box；
+- 需要自动更新：使用原始订阅地址创建自建 relay；
+- 需要固定删减后的节点：导出配置或“删减后订阅”，不要创建 relay；
+- 只想确认解析是否正常：先用节点列表查看，再选择输出格式。
 
 ### Python 命令行
 
@@ -64,11 +164,15 @@ python3 subconv -i input.yaml -l
 
 ### 测试
 
+修改前端源码后，必须先构建再测试：
+
 ```sh
 node build.js
 node test-js.js
 python3 -m py_compile converter.py fetch_proxy.py fetch_proxy_v2.py webui.py
 ```
+
+当前前端回归测试覆盖输入解析、格式互转、Reality 字段、节点分组、节点删减、复用去重、二维码和 Clash GeoSite/fake-ip-filter 规则，结果应为 `PASS 134  FAIL 0`。
 
 ## 自建中转
 
@@ -83,6 +187,14 @@ python3 -m py_compile converter.py fetch_proxy.py fetch_proxy_v2.py webui.py
 5. relay 链接属于 bearer secret，不要公开分享。
 
 公开版默认 `SELF_HOSTED_RELAY = ''`，因此不会指向维护者的服务器。
+
+### Relay 的实际行为
+
+自建 relay 保存原始订阅 URL、请求 User-Agent 和可选的节点名标注模式。客户端每次刷新 relay 链接时，服务器重新抓取上游订阅；v2 默认使用 15 分钟应用缓存，并在上游失败时最多使用 24 小时的陈旧副本。
+
+relay 不保存网页中的节点删减状态。手动删除、关键词、协议、端口、正则和复用去重只影响浏览器本地生成的结果；机场更新后，relay 仍按原始订阅返回新的节点集合。relay ID 等同于访问凭据，不要放到公开仓库、Issue、截图或群组中。
+
+现场重建模式的协议范围比网页解析器窄，`hy2://` 简写、AnyTLS、SSR 和旧版 Hysteria 可能无法在服务端重建时保留。正常透传上游格式时不受这条限制。完整部署和安全边界见 [DEPLOY.md](DEPLOY.md) 与 [RELAY.md](RELAY.md)。
 
 ## 项目结构
 
