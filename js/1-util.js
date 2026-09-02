@@ -159,7 +159,7 @@ function yq(v){
   if(s==='') return '""';
   if(/^[\s>|@`&*!%#,?:\[\]{}\-]/.test(s)||/:\s/.test(s)||/\s#/.test(s)||/[\n"']/.test(s)||
      /^\s|\s$/.test(s)||['true','false','null','yes','no','on','off','~'].includes(s.toLowerCase())||
-     /^-?[\d.]+$/.test(s))
+     /^-?[\d.]+$/.test(s)||/^[0-9a-fA-F]{2,16}$/.test(s))
     return '"'+s.replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n')+'"';
   return s;
 }
