@@ -124,14 +124,31 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
   .choice{min-height:54px}
 }
 </style>
+<style>
+.advanced-fetch{margin:2px 0 0;border:1px solid rgba(148,163,184,.18);border-radius:7px;background:rgba(2,6,23,.2)}
+.advanced-fetch summary{padding:10px 12px;font-size:12px;color:#a9c3cd}
+.advanced-fetch summary small{color:#718096;margin-left:4px}
+.advanced-fetch-body{padding:2px 12px 1px;border-top:1px solid rgba(148,163,184,.12)}
+.advanced-fetch-body>label:first-child{margin-top:12px}
+
+/* Step layout */
+.step-badge{display:inline-block;background:#00d9ff;color:#04121a;border-radius:999px;padding:1px 10px;font-size:11px;font-weight:700;margin-right:6px;line-height:2}
+.step-desc{color:#7d879c;font-size:13px;margin:-8px 0 14px;line-height:1.6}
+.relay-notice{margin:12px 0 0;padding:11px 14px;border:1px solid rgba(255,190,60,.3);border-radius:7px;background:rgba(255,190,60,.06);font-size:12px;line-height:1.65;color:#e4d2a8}
+.relay-notice code{background:rgba(255,190,60,.12);color:#f5d98a}
+</style>
 </head>
 <body>
 <div class="container">
-  <h1>🔄 SubConv</h1>
-  <p class="subtitle">通用订阅转换 · Clash / Clash Meta · v2ray · sing-box · Surge · Quantumult X — 纯前端本地处理</p>
 
+  <h1>🔄 SubConv</h1>
+  <p class="subtitle">通用订阅转换 · Clash / sing-box / v2ray / Surge / Quantumult X — 纯前端本地处理</p>
+
+  <!-- Step 1: 输入订阅 -->
   <div class="card">
-    <div class="tabs">
+    <h3><span class="step-badge">①</span> 输入订阅</h3>
+    <p class="step-desc">粘贴订阅链接、上传订阅文件或直接粘贴节点内容，然后点击第 ③ 步解析。</p>
+<div class="tabs">
       <div class="tab on" data-t="url">🔗 订阅链接</div>
       <div class="tab" data-t="text">📝 粘贴内容</div>
       <div class="tab" data-t="file">📁 上传文件</div>
@@ -140,6 +157,9 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
     <div class="pane on" id="p-url">
       <label>订阅 URL</label>
       <input type="url" id="i-url" placeholder="https://example.com/link/xxxxx">
+      <details class="advanced-fetch">
+        <summary>⚙️ 高级抓取选项 <small>默认「我的服务器」+ Clash Verge，通常无需调整</small></summary>
+        <div class="advanced-fetch-body">
       <label>抓取方式</label>
       <select id="i-fetch">
         <option value="personal">我的服务器（推荐，稳定抓取）</option>
@@ -206,25 +226,29 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       <div id="ua-hint" class="hint">我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可尝试切换其他客户端 UA 后重试。</div>
       <div id="custom-hint" class="hint" style="display:none">自定义代理 URL 支持 <code>{url}</code>（订阅地址）和 <code>{ua}</code>（所选客户端 UA）两个占位符；代理服务需负责转发 UA。</div>
       <div class="hint">浏览器无法直接修改 User-Agent；“我的服务器”会在服务端代为请求，因此不受该限制。公共中转仅作为无服务器时的临时兜底。</div>
-      <div class="relay-box">
-        <b>🔗 新订阅链接</b><span>用当前 URL 和 UA 创建个人中转链接，可直接粘贴到客户端订阅。</span>
-        <button type="button" class="btn btn-line" onclick="createRelay(this)">生成新的订阅链接</button>
-        <div id="relay-result" style="display:none"><input type="text" id="relay-url" readonly><div class="btn-row"><button type="button" class="btn btn-line" onclick="copyRelay()">📋 复制链接</button><button type="button" class="btn btn-line" onclick="window.open($('relay-url').value,'_blank')">↗️ 打开验证</button><button type="button" class="btn btn-line" onclick="showRelayQR()">▦ 二维码</button><button type="button" class="btn btn-line" id="relay-qr-down" style="display:none" onclick="downloadRelayQR()">⬇️ 下载二维码</button></div><div class="qr-wrap" id="relay-qr" style="display:none"></div></div>
-      </div>
+        </div>
+      </details>
+
     </div>
 
-    <div class="pane" id="p-text">
+<div class="pane" id="p-text">
       <label>订阅内容（自动识别格式）</label>
       <textarea id="i-text" placeholder="Base64 URI 订阅 / Clash YAML(Meta) / sing-box JSON / 明文 URI 列表 / Surge CONF"></textarea>
     </div>
 
-    <div class="pane" id="p-file">
+<div class="pane" id="p-file">
       <label>选择文件</label>
       <input type="file" id="i-file" accept=".yaml,.yml,.json,.txt,.conf,.ini">
       <div class="hint">支持 .yaml / .yml / .json / .txt / .conf，最大 20MB</div>
     </div>
+  </div>
 
-    <div class="card" style="margin:12px 0 0;padding:13px 16px;background:rgba(0,217,255,.05)">
+  <!-- Step 2: 节点处理 -->
+  <div class="card">
+    <h3><span class="step-badge">②</span> 节点处理 <span style="color:#7d879c;font-weight:400;font-size:12px">（可选）</span></h3>
+    <p class="step-desc">为节点添加额外标注信息方便识别，或按规则过滤不需要的节点。</p>
+
+<div class="card" style="margin:12px 0 0;padding:13px 16px;background:rgba(0,217,255,.05)">
       <h3 style="margin:0 0 8px">🏷️ 节点名标注</h3>
       <div class="choice-grid" id="nametag-mode" role="group" aria-label="节点名标注方式">
         <button type="button" class="choice on" data-nt="off" aria-pressed="true"><i class="check"></i><span><b>不标注</b><small>保持原节点名</small></span></button>
@@ -236,7 +260,7 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       <div class="hint">用于判断机场是否复用入口：同一 <code>server:port</code> 或同一解析 IP 通常代表复用入口；解析使用阿里 DoH，失败时自动回退显示域名。复用计数始终按<b>订阅全量</b>统计，不随删减变化。</div>
     </div>
 
-    <div class="card filter-box" id="c-filter" style="display:none">
+<div class="filter-box" id="c-filter" style="display:none">
       <h3 style="margin:0 0 8px">✂️ 节点删减 <span id="f-stats" class="f-stats" style="margin:0;display:inline"></span></h3>
       <label>关键词 / 规则（空格或逗号分隔，命中即删除）</label>
       <input type="text" id="f-kw" placeholder="例：hk  0.1x  type:hysteria2  port:34567  re/^🇺🇸/  ！" oninput="filterInputChanged(this.value)" autocomplete="off">
@@ -250,31 +274,42 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       </div>
       <div id="f-removed" class="f-rows" style="display:none"></div>
       <div id="f-groups" class="f-rows" style="display:none"></div>
-      <div class="hint" style="margin-top:8px">删减<b>只影响本机</b>生成的配置与导出；「新订阅链接」由服务器实时拉取，不会带上这里的删减。</div>
-    </div>
 
-    <div class="btn-row" style="margin-top:6px">
+    </div>
+    <div class="hint" style="margin-top:4px">删减<b>只影响本机</b>生成的配置与导出；中转链接由服务器从源站重新拉取，不会携带这里的删减。</div>
+  </div>
+
+  <!-- Step 3: 解析订阅 -->
+  <div class="card">
+    <h3><span class="step-badge">③</span> 解析订阅</h3>
+    <p class="step-desc">点击下方按钮开始解析。解析完成后将显示节点列表与流量信息。</p>
+
+<div class="btn-row" style="margin-top:6px">
       <button class="btn btn-primary" style="flex:2" id="btn-run" onclick="run()">🚀 解析订阅</button>
       <button class="btn btn-line" onclick="loadDemo()">载入演示</button>
     </div>
     <div class="loading" id="loading"><div class="spin"></div>处理中…</div>
     <div class="msg" id="msg"></div>
-    <div class="card" id="c-meta" style="display:none;margin:14px 0 0;padding:13px 16px;background:rgba(0,217,255,.05)">
+
+<div class="card" id="c-meta" style="display:none;margin:14px 0 0;padding:13px 16px;background:rgba(0,217,255,.05)">
       <h3 style="margin:0 0 8px">订阅信息 <span id="meta-source" style="color:#7d879c;font-weight:400;font-size:12px"></span></h3>
       <div class="stats" id="meta-stats"></div>
     </div>
   </div>
 
+  <!-- 节点列表 -->
   <div class="card" id="c-nodes" style="display:none">
-    <h3>📊 解析结果 <span id="cnt" style="color:#7d879c;font-weight:400"></span></h3>
+    <h3>📊 节点列表 <span id="cnt" style="color:#7d879c;font-weight:400"></span></h3>
     <div class="stats" id="stats"></div>
     <div class="node-list" id="nodes"></div>
   </div>
 
+  <!-- Step 4: 输出配置 -->
   <div class="grid2">
     <div class="card">
-      <h3>📤 输出格式</h3>
-      <label>选择要生成的客户端配置（可多选）</label>
+      <h3><span class="step-badge">④</span> 输出格式与选项</h3>
+      <p class="step-desc">选择要生成的客户端配置格式和附加选项。</p>
+<label>选择要生成的客户端配置（可多选）</label>
       <div class="choice-grid" id="fmts" role="group" aria-label="输出格式">
         <button type="button" class="choice on" data-f="clash" aria-pressed="true"><i class="check"></i><span><b>Clash Meta</b><small>YAML · 完整配置</small></span></button>
         <button type="button" class="choice on" data-f="singbox" aria-pressed="true"><i class="check"></i><span><b>sing-box</b><small>JSON · 完整配置</small></span></button>
@@ -293,14 +328,39 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       <div class="msg" id="gmsg"></div>
     </div>
 
+
+    </div>
     <div class="card" id="result-card">
       <h3>📄 生成结果</h3>
+      <p class="step-desc">生成的配置文件可下载、复制或预览。</p>
       <div id="outputs"></div>
       <div class="hint" id="empty-out">尚未生成。解析成功后点击「生成所选配置」。</div>
     </div>
   </div>
 
-  <details class="card">
+  <!-- Step 5: 中转链接 -->
+  <div class="card">
+    <h3><span class="step-badge">⑤</span> 中转链接 <span style="color:#7d879c;font-weight:400;font-size:12px">（进阶功能）</span></h3>
+    <p class="step-desc">将订阅 URL 绑定到服务器，生成一个稳定的客户端订阅链接。适合分享订阅或给不支持订阅更新的客户端使用。</p>
+
+<div class="relay-box">
+        <b>🔗 新订阅链接</b><span>用当前 URL 和 UA 创建个人中转链接，可直接粘贴到客户端订阅。</span>
+        <button type="button" class="btn btn-line" onclick="createRelay(this)">生成新的订阅链接</button>
+        <div id="relay-result" style="display:none"><input type="text" id="relay-url" readonly><div class="btn-row"><button type="button" class="btn btn-line" onclick="copyRelay()">📋 复制链接</button><button type="button" class="btn btn-line" onclick="window.open($('relay-url').value,'_blank')">↗️ 打开验证</button><button type="button" class="btn btn-line" onclick="showRelayQR()">▦ 二维码</button><button type="button" class="btn btn-line" id="relay-qr-down" style="display:none" onclick="downloadRelayQR()">⬇️ 下载二维码</button></div><div class="qr-wrap" id="relay-qr" style="display:none"></div></div>
+      </div>
+
+    <div class="relay-notice">
+      <b>⚠️ 中转链接与本地操作互斥</b><br>
+      中转链接由服务器<b>从原始订阅源重新拉取</b>，浏览器本地做的以下修改<b>不会</b>传递到中转链接中：<br>
+      • <b>节点删减</b>（关键词过滤、手动 ✕ 删除、复用去重）— 中转链接始终返回全量节点<br>
+      • <b>IP 解析结果</b>（"解析域名为 IP"的缓存）— 服务器使用自己的 DNS<br>
+      • <b>标注模式在生成时固定</b> — 链接创建时会记录当时的标注模式（<code>不标注 / 地址:端口 / IP:端口 / 仅端口</code>），后续切换标注模式，已有链接<b>不会自动更新</b>。如需新模式请重新生成链接。<br><br>
+      <b>中转链接只记录</b>：原始订阅 URL、所选 UA、标注模式。本地删减和 IP 解析一概不传递。<br>
+      <b>建议</b>：先确认节点列表，再决定是用「生成配置」（带删减）还是「中转链接」（原始全量）。
+    </div>
+  </div>
+
+<details class="card">
     <summary>ℹ️ 支持范围与技术说明</summary>
     <div style="margin-top:12px;line-height:1.95;font-size:12.5px;color:#9aa7bd">
       <b style="color:#c8d3e8">输入</b>：Base64 URI 列表、明文 URI 列表、Clash / Clash Meta YAML（含 flow 风格 <code>{ }</code>）、sing-box JSON、Surge CONF。<br>
@@ -308,11 +368,15 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       <b style="color:#c8d3e8">输出</b>：Clash YAML、sing-box JSON、v2ray Base64 订阅、Surge、Quantumult X。<br>
       <b style="color:#c8d3e8">隐私</b>：转换全部在本机浏览器完成；除你主动选择的抓取代理外，不向任何第三方发送数据。
     </div>
-  </details>
-  <p class="foot">SubConv · 单文件版 · 无依赖 · 可离线使用（另附 Python CLI 版本支持 UA 轮换抓取）</p>
+<p class="foot">SubConv · 单文件版 · 无依赖 · 可离线使用（另附 Python CLI 版本支持 UA 轮换抓取）</p>
+</div>
+
 </div>
 <script>
 /*__APP_JS__*/
 </script>
+</body>
+</html>
+
 </body>
 </html>
