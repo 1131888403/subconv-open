@@ -56,7 +56,6 @@ async function createRelay(btn){
   const url=$('i-url').value.trim(), ua=encodeURIComponent($('i-ua').value||'clash-verge/v1.3.6'), tag=encodeURIComponent((NAMETAG&&NAMETAG.mode)||'off');
   if(!url){$('msg').className='msg warn';$('msg').textContent='请先输入订阅 URL';return;}
   if(!SELF_HOSTED_RELAY){$('msg').className='msg warn';$('msg').textContent='此开源版未绑定公共中转；请部署自己的 relay 后设置 SELF_HOSTED_RELAY。';return;}
-  const old=btn.textContent; btn.disabled=true; btn.textContent='正在创建…';
   try{const r=await fetch(SELF_HOSTED_RELAY+'/my-create?url='+encodeURIComponent(url)+'&ua='+ua+'&tag='+tag);if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();if(!d.id)throw Error('服务器未返回链接 ID');$('relay-url').value=SELF_HOSTED_RELAY+'/sub/'+d.id;$('relay-result').style.display='block';$('msg').className='msg ok';$('msg').textContent='新的订阅链接已创建，客户端刷新该链接时会按当前标注模式改写节点名';}
   catch(e){$('msg').className='msg err';$('msg').textContent='创建订阅链接失败：'+e.message;}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -67,7 +66,6 @@ async function createConvertedRelay(btn){
   const selected=[...document.querySelectorAll('#fmts .choice.on')].map(x=>x.dataset.f).filter(x=>['clash','singbox','v2ray'].includes(x));
   if(!url){$('gmsg').className='msg warn';$('gmsg').textContent='请先在 URL 输入页填写订阅地址';return;}
   if(!SELF_HOSTED_RELAY){$('gmsg').className='msg warn';$('gmsg').textContent='此开源版未绑定公共中转；请部署自己的 relay 后设置 SELF_HOSTED_RELAY。';return;}
-  if(selected.length!==1){$('gmsg').className='msg warn';$('gmsg').textContent='转换订阅链接只能选择一种 Clash、sing-box 或 v2ray 格式';return;}
   const options={}; document.querySelectorAll('#opts .choice.on').forEach(x=>options[x.dataset.o]=true);
   const target=selected[0]==='v2ray'?'uri':selected[0]; const old=btn.textContent; btn.disabled=true; btn.textContent='正在创建…';
   try{
@@ -79,11 +77,21 @@ async function createConvertedRelay(btn){
   }catch(e){$('gmsg').className='msg err';$('gmsg').textContent='创建转换订阅失败：'+e.message;}
   finally{btn.disabled=false;btn.textContent=old;}
 }
-function showNodes(){ $('c-nodes').style.display='block'; $('cnt').textContent=NODES.length+' 个节点'; $('nodes').innerHTML=NODES.map(n=>`<div class="node"><b>${esc(n.name)}</b><small>${esc(n._orig&&n._orig!==n.name?n._orig+' · ':'')}${esc(n.protocol)} · ${esc(n.server)}:${esc(n.port)}</small></div>`).join(''); }
+function showNodes(){
+  $('c-nodes').style.display='block';
+  const rm=(typeof FILTER_APPLIED!=='undefined'&&FILTER_APPLIED.removed)?FILTER_APPLIED.removed.length:0;
+  $('cnt').textContent=NODES.length+' 个节点'+(rm?('（已删 '+rm+'）'):'');
+  $('nodes').innerHTML=NODES.map((n,i)=>`<div class="node"><div class="node-row"><div><b>${esc(n.name)}</b><small>${esc(n._orig&&n._orig!==n.name?n._orig+' · ':'')}${esc(n.protocol)} · ${esc(n.server)}:${esc(n.port)}</small></div><button type="button" class="node-x" title="删除此节点" onclick="toggleNodeHidden(${i})">✕</button></div></div>`).join('');
+  const cf=$('c-filter'); if(cf) cf.style.display=(typeof MASTER!=='undefined'&&MASTER.length)?'block':'none';
+  if(typeof renderFilterPanels==='function') renderFilterPanels();
+}
 let urlInputRevision=0;
 function resetUrlResults(){
   urlInputRevision++;
   NODES.length=0;
+  if(typeof MASTER!=='undefined') MASTER.length=0;
+  if(typeof FILTER_APPLIED!=='undefined') FILTER_APPLIED={kept:[],removed:[],groups:[]};
+  const _cf=$('c-filter'); if(_cf) _cf.style.display='none';
   SUB_META={source:'browser',upload:0,download:0,total:0,expire:null,used:0,remaining:null,title:null};
   $('c-nodes').style.display='none'; $('c-meta').style.display='none';
   $('nodes').innerHTML=''; $('cnt').textContent=''; $('msg').textContent=''; $('msg').className='msg';
@@ -97,7 +105,9 @@ async function run(){
     else if(tab==='file'){const f=$('i-file').files[0]; if(!f)throw Error('请选择文件'); text=await f.text();}
     else text=$('i-text').value;
     if(tab==='url' && revision!==urlInputRevision) return;
-    const r=loadContent(text); if(!r.n)throw Error(r.warn||'无法解析订阅'); $('msg').textContent=`${r.format}，解析到 ${r.n} 个节点`; showNodes(); renderMeta();
+    const r=loadContent(text); if(!r.n)throw Error(r.warn||'无法解析订阅');
+    $('msg').textContent=`${r.format}，母本 ${r.master||r.n} 个节点`+(r.removed?`；已按记录删除 ${r.removed} 个，生效 ${r.n} 个`:(r.restored?'；沿用上次删减规则':'，解析到 '+r.n+' 个节点'));
+    showNodes(); renderMeta();
   }catch(e){if(!(tab==='url' && revision!==urlInputRevision)){$('msg').textContent='错误：'+e.message; $('c-nodes').style.display='none';}} finally{$('loading').style.display='none';}
 }
 const GENERATED={}; let genSeq=0;
@@ -121,4 +131,4 @@ function gen(){
 /* ================= 演示数据 ================= */
 function loadDemo(){ const uris=['vless://11111111-2222-3333-4444-555555555555@hk01.example.com:54183?encryption=none&security=reality&type=tcp&sni=demo.example.com&pbk=wfREB0000000000000000000000000000000000000000000000&sid=9480bd1f859c1e#HK01-Demo','vmess://'+b64e(JSON.stringify({v:'2',ps:'US01-WS-Demo',add:'us.example.com',port:'443',id:'b2c3d4e5-f6a7-8901-bcde-f12345678901',net:'ws',path:'/vmess',tls:'tls'}))]; switchTab('text'); $('i-text').value=uris.join('\n'); run(); }
 function switchTab(t){document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));$('p-'+t).classList.add('on');}
-window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-url').addEventListener('input',resetUrlResults);$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});
+window.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.tab').forEach(x=>x.onclick=()=>switchTab(x.dataset.t));document.querySelectorAll('.choice').forEach(x=>x.onclick=()=>{if(x.dataset.nt){document.querySelectorAll('#nametag-mode .choice').forEach(y=>{const on=y===x;y.classList.toggle('on',on);y.setAttribute('aria-pressed',String(on));});NAMETAG.mode=x.dataset.nt;NAMETAG.markDup=x.dataset.nt!=='off';refreshNameTags();return;}if(x.dataset.fd){toggleDupDrop();return;}const on=!x.classList.contains('on');x.classList.toggle('on',on);x.setAttribute('aria-pressed',String(on));});$('i-url').addEventListener('input',resetUrlResults);$('i-fetch').onchange=()=>{const custom=$('i-fetch').value==='custom';$('i-proxy').style.display=custom?'block':'none';$('custom-hint').style.display=custom?'block':'none';$('ua-hint').textContent=custom?'自定义代理 URL 支持 {url}（订阅地址）和 {ua}（所选客户端 UA）两个占位符；代理服务需负责转发 UA。':'我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。';};const u=new URLSearchParams(location.search).get('url')||new URLSearchParams(location.search).get('sub');if(u){switchTab('url');$('i-url').value=u;}});

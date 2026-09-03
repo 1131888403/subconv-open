@@ -173,7 +173,7 @@ function buildClash(list,opt){
     const mediaG=hasStr('🌍 国外媒体')?'🌍 国外媒体':P;
     [['GEOSITE,youtube',mediaG],['GEOSITE,netflix',mediaG],['GEOSITE,twitter',P],
      ['GEOSITE,openai',P],['GEOSITE,anthropic',P],['GEOSITE,google',P],['GEOSITE,github',P],
-     ['GEOSITE,geolocation-!cn',P],['GEOSITE,category-ads-all','REJECT'],
+     ['GEOSITE,gfw',P],['GEOSITE,category-ads-all','REJECT'],
      ['GEOSITE,private','DIRECT'],['GEOSITE,geolocation-cn','DIRECT'],
      ['GEOIP,CN','DIRECT,no-resolve'],['GEOIP,LAN','DIRECT,no-resolve'],
      ['GEOIP,PRIVATE','DIRECT,no-resolve']].forEach(([r,t])=>policy.push(r+','+t));

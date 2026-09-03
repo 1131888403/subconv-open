@@ -42,23 +42,104 @@ except Exception as _exc:  # pragma: no cover - only when the module is missing
 
 DEFAULT_UA = 'clash-verge/v1.3.6'
 USER_AGENTS = {
+    # --- mainstream (Clash ecosystem) ---
     'clash-verge/v1.3.6',
-    'NekoBox/Android/1.2.9',
+    'clash-for-windows/1.0.0',
+    'ClashMeta/1.18.0',
+    'Clash.Meta/1.18.0',
+    'ClashForAndroid/3.0',
+    'ClashX/1.0',
+    # --- Hiddify family ---
+    'hiddify/1.1.0',
+    'hiddifyr/1.1.0',
+    'hiddifyN/1.1.0',
+    # --- Android V2Ray ---
     'v2rayNG/1.8.0',
     'v2rayN/6.0',
+    'NekoBox/Android/1.2.9',
+    'neko-box/1.2.9',
+    'SagerNet/1.0.0',
+    'Matsuri/1.0',
+    'FoxRay/1.0',
+    'V2Box/1.0',
+    'AnXray/1.0',
+    # --- iOS ---
+    'shadowrocket/1.0.0',
+    'Streisand/1.0',
+    'Loon/3.0',
+    'Quantumult X/1.0',
+    'Potatso/2.0',
+    'Stash/2.0',
+    'Pharos/1.0',
+    'FairVPN/1.0',
+    # --- macOS ---
+    'V2RayU/1.0',
+    # --- Clash GUI variants ---
+    'Surfboard/1.0',
+    'Choc/1.0',
+    'FLClash/1.0',
+    'ClashNyanpasu/1.0',
+    'clash-nyanpasu/1.0',
+    'Surge/5.0',
+    'Mihomo/1.18.0',
+    'mihomo/1.18.0',
+    # --- other ---
     'sing-box/1.8.0',
-    'ClashMeta/1.18.0',
+    'karing/1.0',
     'Qv2ray/2.7.0',
+    'v2rayA/1.0',
+    'Kitsunebi/1.0',
+    'Igniter/1.0',
+    'NapsternetV/1.0',
+    'HTTPCustom/1.0',
+    'Netch/1.0',
 }
 # Order matters: richest Clash output first, URI lists last.
 UA_CHAIN = [
+    'hiddify/1.1.0',
+    'hiddifyr/1.1.0',
+    'hiddifyN/1.1.0',
+    'clash-for-windows/1.0.0',
     'clash-verge/v1.3.6',
     'ClashMeta/1.18.0',
+    'Clash.Meta/1.18.0',
+    'Mihomo/1.18.0',
+    'mihomo/1.18.0',
+    'ClashForAndroid/3.0',
+    'ClashX/1.0',
+    'Surfboard/1.0',
+    'Stash/2.0',
+    'Choc/1.0',
+    'FLClash/1.0',
+    'ClashNyanpasu/1.0',
+    'clash-nyanpasu/1.0',
+    'Surge/5.0',
+    'sing-box/1.8.0',
+    'karing/1.0',
     'NekoBox/Android/1.2.9',
+    'neko-box/1.2.9',
     'v2rayNG/1.8.0',
     'v2rayN/6.0',
-    'sing-box/1.8.0',
+    'SagerNet/1.0.0',
+    'Matsuri/1.0',
+    'FoxRay/1.0',
+    'V2Box/1.0',
+    'AnXray/1.0',
+    'V2RayU/1.0',
     'Qv2ray/2.7.0',
+    'v2rayA/1.0',
+    'Kitsunebi/1.0',
+    'Igniter/1.0',
+    'shadowrocket/1.0.0',
+    'Streisand/1.0',
+    'Loon/3.0',
+    'Quantumult X/1.0',
+    'Potatso/2.0',
+    'Pharos/1.0',
+    'FairVPN/1.0',
+    'NapsternetV/1.0',
+    'HTTPCustom/1.0',
+    'Netch/1.0',
 ]
 MAX_BYTES = 8 * 1024 * 1024
 CACHE_TTL = 900          # reuse upstream bytes younger than this
@@ -290,13 +371,35 @@ def patch_clash_text(text, name_map):
         elif in_groups and re.match(r'^\S', raw) and not re.match(r'^\s', raw):
             in_groups = False
         if in_groups:
-            lm = re.match(r'^(\s*-\s+)(.*?)(\s*)$', raw)
-            if lm:
-                val = lm.group(2).strip()
-                quote = val[:1] if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0] else ''
-                key = val[1:-1] if quote else val
-                if key in name_map:
-                    raw = lm.group(1) + json.dumps(str(name_map[key]), ensure_ascii=False) + lm.group(3)
+            # A proxy-group's member list may be written either as block
+            # entries (``- name``) or as a flow sequence on one line
+            # (``proxies: [A, B]``). The old line patcher only handled the
+            # block form, so flow-style memberships kept the *old* node names
+            # after renaming every proxy -> dangling references -> mihomo
+            # drops the group and the client falls back to the GLOBAL tab
+            # (all traffic proxied). Rewrite the flow sequence too.
+            am = re.match(r'^(\s*proxies:\s*)(\[.*\])(\s*)$', raw)
+            if am:
+                inner = am.group(2)[1:-1]
+                parts = re.split(r',(?=(?:[^"\']*["\'][^"\']*["\'])*[^"\']*$)', inner) if inner.strip() else []
+                new_parts = []
+                for part in parts:
+                    val = part.strip()
+                    quote = val[:1] if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0] else ''
+                    key = val[1:-1] if quote else val
+                    if key in name_map:
+                        new_parts.append(json.dumps(str(name_map[key]), ensure_ascii=False))
+                    else:
+                        new_parts.append(val)
+                raw = am.group(1) + '[' + ', '.join(new_parts) + ']' + am.group(3)
+            else:
+                lm = re.match(r'^(\s*-\s+)(.*?)(\s*)$', raw)
+                if lm:
+                    val = lm.group(2).strip()
+                    quote = val[:1] if len(val) >= 2 and val[0] in "\"'" and val[-1] == val[0] else ''
+                    key = val[1:-1] if quote else val
+                    if key in name_map:
+                        raw = lm.group(1) + json.dumps(str(name_map[key]), ensure_ascii=False) + lm.group(3)
         out.append(raw + nl)
     return ''.join(out)
 
@@ -526,9 +629,17 @@ CACHE = Cache()
 
 def expected_format(ua):
     """Which payload shape the client behind this UA actually wants."""
-    if ua == 'sing-box/1.8.0':
+    if ua in ('sing-box/1.8.0', 'karing/1.0'):
         return 'singbox'
-    if ua in ('v2rayN/6.0', 'v2rayNG/1.8.0', 'Qv2ray/2.7.0'):
+    if ua in ('v2rayN/6.0', 'v2rayNG/1.8.0', 'Qv2ray/2.7.0',
+              'v2rayA/1.0', 'Matsuri/1.0', 'FoxRay/1.0',
+              'SagerNet/1.0.0', 'Kitsunebi/1.0', 'Igniter/1.0',
+              'NekoBox/Android/1.2.9', 'neko-box/1.2.9',
+              'V2RayU/1.0', 'V2Box/1.0', 'AnXray/1.0',
+              'shadowrocket/1.0.0', 'Streisand/1.0', 'Loon/3.0',
+              'Quantumult X/1.0', 'Potatso/2.0', 'Pharos/1.0',
+              'FairVPN/1.0', 'NapsternetV/1.0', 'HTTPCustom/1.0',
+              'Netch/1.0'):
         return 'uri'
     return 'clash'
 

@@ -153,16 +153,57 @@ input[type=text]:hover,input[type=url]:hover,textarea:hover,select:hover{border-
       </select>
       <label id="ua-label">请求 User-Agent</label>
       <select id="i-ua">
+        <!-- Clash-based -->
         <option value="clash-verge/v1.3.6">Clash Verge</option>
-        <option value="NekoBox/Android/1.2.9">NekoBox</option>
+        <option value="clash-for-windows/1.0.0">Clash for Windows</option>
+        <option value="ClashMeta/1.18.0">Clash Meta</option>
+        <option value="Clash.Meta/1.18.0">Clash.Meta</option>
+        <option value="Mihomo/1.18.0">Mihomo</option>
+        <option value="mihomo/1.18.0">mihomo</option>
+        <option value="ClashForAndroid/3.0">Clash for Android</option>
+        <option value="ClashX/1.0">ClashX (macOS)</option>
+        <option value="Surfboard/1.0">Surfboard</option>
+        <option value="Stash/2.0">Stash</option>
+        <option value="Choc/1.0">Choc</option>
+        <option value="FLClash/1.0">FLClash</option>
+        <option value="ClashNyanpasu/1.0">Nyanpasu</option>
+        <option value="clash-nyanpasu/1.0">clash-nyanpasu</option>
+        <option value="Surge/5.0">Surge</option>
+        <!-- Hiddify family -->
+        <option value="hiddify/1.1.0">Hiddify</option>
+        <option value="hiddifyr/1.1.0">HiddifyR</option>
+        <option value="hiddifyN/1.1.0">HiddifyN</option>
+        <!-- sing-box format -->
+        <option value="sing-box/1.8.0">sing-box</option>
+        <option value="karing/1.0">Karing</option>
+        <!-- URI-based -->
         <option value="v2rayNG/1.8.0">v2rayNG</option>
         <option value="v2rayN/6.0">v2rayN</option>
-        <option value="sing-box/1.8.0">sing-box</option>
-        <option value="ClashMeta/1.18.0">Clash Meta</option>
+        <option value="NekoBox/Android/1.2.9">NekoBox</option>
+        <option value="neko-box/1.2.9">neko-box</option>
+        <option value="SagerNet/1.0.0">SagerNet</option>
+        <option value="Matsuri/1.0">Matsuri</option>
+        <option value="FoxRay/1.0">FoxRay</option>
+        <option value="V2Box/1.0">V2Box</option>
+        <option value="AnXray/1.0">AnXray</option>
+        <option value="V2RayU/1.0">V2RayU (macOS)</option>
         <option value="Qv2ray/2.7.0">Qv2ray</option>
+        <option value="v2rayA/1.0">v2rayA</option>
+        <option value="Kitsunebi/1.0">Kitsunebi</option>
+        <option value="Igniter/1.0">Igniter</option>
+        <option value="shadowrocket/1.0.0">Shadowrocket</option>
+        <option value="Streisand/1.0">Streisand</option>
+        <option value="Loon/3.0">Loon</option>
+        <option value="Quantumult X/1.0">Quantumult X</option>
+        <option value="Potatso/2.0">Potatso</option>
+        <option value="Pharos/1.0">Pharos</option>
+        <option value="FairVPN/1.0">FairVPN</option>
+        <option value="NapsternetV/1.0">NapsternetV</option>
+        <option value="HTTPCustom/1.0">HTTP Custom</option>
+        <option value="Netch/1.0">Netch (Windows)</option>
       </select>
       <input type="text" id="i-proxy" placeholder="https://my-proxy/?url={url}&ua={ua}" style="display:none">
-      <div id="ua-hint" class="hint">我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可切换 Clash Meta、Clash Verge、v2rayN 或 sing-box 后重试。</div>
+      <div id="ua-hint" class="hint">我的服务器会将上方选择的 UA 转发给订阅源。若返回空壳配置，可尝试切换其他客户端 UA 后重试。</div>
       <div id="custom-hint" class="hint" style="display:none">自定义代理 URL 支持 <code>{url}</code>（订阅地址）和 <code>{ua}</code>（所选客户端 UA）两个占位符；代理服务需负责转发 UA。</div>
       <div class="hint">浏览器无法直接修改 User-Agent；“我的服务器”会在服务端代为请求，因此不受该限制。公共中转仅作为无服务器时的临时兜底。</div>
       <div class="relay-box">
