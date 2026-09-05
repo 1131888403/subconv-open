@@ -56,6 +56,7 @@ async function createRelay(btn){
   const url=$('i-url').value.trim(), ua=encodeURIComponent($('i-ua').value||'clash-verge/v1.3.6'), tag=encodeURIComponent((NAMETAG&&NAMETAG.mode)||'off');
   if(!url){$('msg').className='msg warn';$('msg').textContent='请先输入订阅 URL';return;}
   if(!SELF_HOSTED_RELAY){$('msg').className='msg warn';$('msg').textContent='此开源版未绑定公共中转；请部署自己的 relay 后设置 SELF_HOSTED_RELAY。';return;}
+  const old=btn.textContent; btn.disabled=true; btn.textContent='正在创建…';
   try{const r=await fetch(SELF_HOSTED_RELAY+'/my-create?url='+encodeURIComponent(url)+'&ua='+ua+'&tag='+tag);if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();if(!d.id)throw Error('服务器未返回链接 ID');$('relay-url').value=SELF_HOSTED_RELAY+'/sub/'+d.id;$('relay-result').style.display='block';$('msg').className='msg ok';$('msg').textContent='新的订阅链接已创建，客户端刷新该链接时会按当前标注模式改写节点名';}
   catch(e){$('msg').className='msg err';$('msg').textContent='创建订阅链接失败：'+e.message;}
   finally{btn.disabled=false;btn.textContent=old;}
@@ -65,6 +66,7 @@ async function createConvertedRelay(btn){
   const url=$('i-url').value.trim(), ua=encodeURIComponent($('i-ua').value||'clash-verge/v1.3.6'), tag=encodeURIComponent((NAMETAG&&NAMETAG.mode)||'off');
   const selected=[...document.querySelectorAll('#fmts .choice.on')].map(x=>x.dataset.f).filter(x=>['clash','singbox','v2ray'].includes(x));
   if(!url){$('gmsg').className='msg warn';$('gmsg').textContent='请先在 URL 输入页填写订阅地址';return;}
+  if(selected.length!==1){$('gmsg').className='msg warn';$('gmsg').textContent='转换订阅链接只能选择一种 Clash、sing-box 或 v2ray 格式';return;}
   if(!SELF_HOSTED_RELAY){$('gmsg').className='msg warn';$('gmsg').textContent='此开源版未绑定公共中转；请部署自己的 relay 后设置 SELF_HOSTED_RELAY。';return;}
   const options={}; document.querySelectorAll('#opts .choice.on').forEach(x=>options[x.dataset.o]=true);
   const target=selected[0]==='v2ray'?'uri':selected[0]; const old=btn.textContent; btn.disabled=true; btn.textContent='正在创建…';

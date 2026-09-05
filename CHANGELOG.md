@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Port the author byline and inline smiley logo from the private build (avatar embedded as base64, no extra request).
+- Restore the "single output format" guard in `createConvertedRelay`, dropped when the maintainer relay was made optional.
+- Fix a `ReferenceError` in `createRelay`: the button-state line was lost during relay sanitization while its `finally` block still referenced it.
 - Add local node filtering and export of the filtered subscription.
 - Add reuse-based deduplication with protocol and address/port grouping.
 - Fix stale URL results and keep the public build unbound to any maintainer relay.
